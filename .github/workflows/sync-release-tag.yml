@@ -84,13 +84,13 @@ jobs:
 
           if [ -n "${latest_release_tag}" ]; then
             changed_paths="$(git diff --name-only "${latest_release_tag}..HEAD" || true)"
-            releasable_paths="$(echo "${changed_paths}" | grep -Ev '^(\.github/|\.cpamc-fork-upstream\.env$)' || true)"
+            releasable_paths="$(echo "${changed_paths}" | grep -Ev '^(\.github/|\.cpamc-fork-upstream\.env$|.*\.md$)' || true)"
             if [ -z "${changed_paths}" ]; then
               echo "[i] No changes since ${latest_release_tag}; nothing to tag."
               exit 0
             fi
             if [ -z "${releasable_paths}" ]; then
-              echo "[i] Only fork automation metadata changed since ${latest_release_tag}; release asset unchanged."
+              echo "[i] Only fork automation/docs metadata changed since ${latest_release_tag}; release asset unchanged."
               exit 0
             fi
           fi
