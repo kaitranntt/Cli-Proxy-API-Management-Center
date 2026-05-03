@@ -4,6 +4,14 @@ A single-file Web UI (React + TypeScript) for operating and troubleshooting the 
 
 [中文文档](README_CN.md)
 
+## Maintained fork
+
+`kaitranntt/Cli-Proxy-API-Management-Center` is maintained as the dashboard release stream for **CLIProxyAPIPlus**. Fork releases publish `management.html` assets that CLIProxyAPIPlus can download and bundle independently from the upstream dashboard.
+
+- Clean upstream updates are merged by the `Upstream Sync` workflow after `npm ci`, `npm run lint`, and `npm run build` pass.
+- Conflicts or failed gates update a single assigned `upstream-sync-blocked` issue.
+- Fork-only release tags use the upstream-compatible `vX.Y.Z-N` suffix pattern when an extra dashboard asset is needed.
+
 **Main Project**: https://github.com/router-for-me/CLIProxyAPI  
 **Example URL**: https://remote.router-for.me/  
 **Minimum Required Version**: ≥ 6.8.0 (recommended ≥ 6.8.15)
@@ -119,7 +127,8 @@ The UI language is automatically detected from browser settings and can be manua
 ## Build & release notes
 
 - Vite produces a **single HTML** output (`dist/index.html`) with all assets inlined (via `vite-plugin-singlefile`).
-- Tagging `vX.Y.Z` triggers `.github/workflows/release.yml` to publish `dist/management.html`.
+- Tagging `vX.Y.Z` or dispatching `.github/workflows/release.yml` with a tag publishes `dist/management.html`.
+- The maintained fork may use `vX.Y.Z-N` release tags for fork-owned dashboard builds.
 - The UI version shown in the footer is injected at build time (env `VERSION`, git tag, or `package.json` fallback).
 
 ## Security notes
