@@ -1,0 +1,345 @@
+name: Upstream Sync
+
+# Keeps kaitranntt/Cli-Proxy-API-Management-Center synced with
+# router-for-me/Cli-Proxy-API-Management-Center while preserving fork-specific
+# dashboard changes. Clean merges that pass install/lint/build fast-forward main.
+# Conflicts or gate failures update a single tracking issue.
+
+on:
+  schedule:
+    - cron: '27 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force_pr:
+        description: 'Always open a PR even on clean merge'
+        required: false
+        default: 'false'
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  TRACKING_ISSUE_LABEL: upstream-sync-blocked
+  PR_LABEL: upstream-sync
+  FORCE_PR: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.force_pr == 'true' && 'true' || 'false' }}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "cpamc-fork-sync[bot]"
+          git config user.email "cpamc-fork-sync@users.noreply.github.com"
+
+      - name: Supersede prior sync PRs and stale branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          OPEN_PRS=$(gh pr list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --search 'in:title upstream-sync' \
+            --json number,headRefName \
+            --jq '.[] | "\(.number) \(.headRefName)"' || true)
+          if [ -n "${OPEN_PRS}" ]; then
+            echo "${OPEN_PRS}" | while read -r NUM BRANCH; do
+              [ -z "${NUM}" ] && continue
+              gh pr close "${NUM}" --repo "${{ github.repository }}" \
+                --comment "Superseded by upcoming upstream-sync run." || true
+              if [ -n "${BRANCH}" ]; then
+                git push origin --delete "${BRANCH}" 2>/dev/null || true
+              fi
+            done
+          fi
+
+          git ls-remote --heads origin 'upstream-sync/*' \
+            | awk '{print $2}' \
+            | sed 's|refs/heads/||' \
+            | while read -r BR; do
+                [ -z "${BR}" ] && continue
+                git push origin --delete "${BR}" 2>/dev/null || true
+              done
+          set -e
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/router-for-me/Cli-Proxy-API-Management-Center.git
+
+      - name: Fetch upstream
+        run: git fetch upstream main --tags
+
+      - name: Check for new upstream commits
+        id: check
+        run: |
+          LOCAL=$(git rev-parse HEAD)
+          UPSTREAM_MERGE_BASE=$(git merge-base HEAD upstream/main || echo "none")
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          UPSTREAM_TAG=$(git ls-remote --tags --refs upstream 'v[0-9]*.[0-9]*.[0-9]*' \
+            | awk '{print $2}' \
+            | sed 's|refs/tags/||' \
+            | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sort -V \
+            | tail -1 || true)
+          echo "local=${LOCAL}" >> "$GITHUB_OUTPUT"
+          echo "upstream_head=${UPSTREAM_HEAD}" >> "$GITHUB_OUTPUT"
+          echo "upstream_tag=${UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "merge_base=${UPSTREAM_MERGE_BASE}" >> "$GITHUB_OUTPUT"
+          if [ "${UPSTREAM_HEAD}" = "${UPSTREAM_MERGE_BASE}" ]; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "[i] Fork already contains all upstream commits; nothing to sync."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            if [ "${UPSTREAM_MERGE_BASE}" = "none" ]; then
+              git log --oneline upstream/main | head -20
+            else
+              git log --oneline "${UPSTREAM_MERGE_BASE}..upstream/main" | head -20
+            fi
+          fi
+
+      - name: Close stale tracking issue when fork is back in sync
+        if: steps.check.outputs.has_changes == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          OPEN_ISSUES=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label "${TRACKING_ISSUE_LABEL}" \
+            --json number \
+            --jq '.[].number' || true)
+          for n in ${OPEN_ISSUES}; do
+            gh issue close "${n}" --repo "${{ github.repository }}" \
+              --comment "Fork is now in sync with upstream. Auto-closing." || true
+          done
+          set -e
+
+      - name: Create sync branch
+        if: steps.check.outputs.has_changes == 'true'
+        id: branch
+        run: |
+          BRANCH="upstream-sync/$(date -u +%Y%m%d-%H%M)"
+          echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
+          git checkout -b "${BRANCH}"
+          git push origin "${BRANCH}"
+
+      - name: Merge upstream
+        if: steps.check.outputs.has_changes == 'true'
+        id: merge
+        continue-on-error: true
+        run: |
+          set +e
+          MERGE_LOG=$(mktemp)
+          git merge --no-edit upstream/main 2>&1 | tee "${MERGE_LOG}"
+          MERGE_EXIT=${PIPESTATUS[0]}
+          UNMERGED=$(git ls-files -u | awk '{print $4}' | sort -u || true)
+          {
+            echo 'CONFLICT_FILES<<EOF'
+            echo "${UNMERGED}"
+            echo 'EOF'
+            echo 'MERGE_TAIL<<EOF'
+            tail -n 60 "${MERGE_LOG}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+          if [ "${MERGE_EXIT}" -ne 0 ] || [ -n "${UNMERGED}" ]; then
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+            git merge --abort || true
+          else
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+          exit 0
+
+      - name: Set up Node.js
+        if: steps.check.outputs.has_changes == 'true' && steps.merge.outputs.passed == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Record synced upstream version
+        if: steps.check.outputs.has_changes == 'true' && steps.merge.outputs.passed == 'true'
+        run: |
+          {
+            echo "UPSTREAM_TAG=${{ steps.check.outputs.upstream_tag }}"
+            echo "UPSTREAM_COMMIT=${{ steps.check.outputs.upstream_head }}"
+          } > .cpamc-fork-upstream.env
+          git add .cpamc-fork-upstream.env
+          git diff --cached --quiet || git commit -m "chore(upstream-sync): record upstream version"
+
+      - name: Gate
+        if: steps.check.outputs.has_changes == 'true' && steps.merge.outputs.passed == 'true'
+        id: gate
+        continue-on-error: true
+        run: |
+          set +e
+          GATE_LOG=$(mktemp)
+          {
+            npm ci
+            npm run lint
+            npm run build
+          } 2>&1 | tee "${GATE_LOG}"
+          GATE_EXIT=${PIPESTATUS[0]}
+          if [ "${GATE_EXIT}" -ne 0 ]; then
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo 'GATE_TAIL<<EOF'
+            tail -n 60 "${GATE_LOG}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+          set -e
+
+      - name: Push sync branch
+        if: steps.check.outputs.has_changes == 'true' && steps.merge.outputs.passed == 'true'
+        run: git push origin "${{ steps.branch.outputs.name }}"
+
+      - name: Fast-forward main
+        id: ffwd
+        if: |
+          steps.check.outputs.has_changes == 'true' &&
+          steps.merge.outputs.passed == 'true' &&
+          steps.gate.outputs.passed == 'true' &&
+          env.FORCE_PR != 'true'
+        run: |
+          git checkout main
+          git merge --ff-only "${{ steps.branch.outputs.name }}"
+          git push origin main
+          git push origin --delete "${{ steps.branch.outputs.name }}"
+          echo "did_ff=true" >> "$GITHUB_OUTPUT"
+
+      - name: Close stale tracking issue after fast-forward
+        if: steps.ffwd.outputs.did_ff == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          OPEN_ISSUES=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label "${TRACKING_ISSUE_LABEL}" \
+            --json number \
+            --jq '.[].number' || true)
+          for n in ${OPEN_ISSUES}; do
+            gh issue close "${n}" --repo "${{ github.repository }}" \
+              --comment "Resolved by automated fast-forward to upstream ${{ steps.check.outputs.upstream_head }}." || true
+          done
+          set -e
+
+      - name: Open PR when forced
+        if: |
+          steps.check.outputs.has_changes == 'true' &&
+          steps.merge.outputs.passed == 'true' &&
+          env.FORCE_PR == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create "${PR_LABEL}" \
+            --color "0E8A16" \
+            --description "Automated upstream sync PR." \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+
+          TITLE="chore(upstream-sync): pull dashboard upstream"
+          BODY=$(printf "## Upstream sync\n\n- Upstream HEAD: \`${{ steps.check.outputs.upstream_head }}\`\n- Upstream tag: \`${{ steps.check.outputs.upstream_tag }}\`\n\nValidation: npm ci, lint, build.\n")
+          PR_URL=$(gh pr create \
+            --base main \
+            --head "${{ steps.branch.outputs.name }}" \
+            --title "${TITLE}" \
+            --body "${BODY}")
+          echo "${PR_URL}"
+          PR_NUM=$(echo "${PR_URL}" | grep -oE '/pull/[0-9]+' | grep -oE '[0-9]+$' || true)
+          if [ -n "${PR_NUM}" ]; then
+            gh pr edit "${PR_NUM}" --add-label "${PR_LABEL}" 2>/dev/null || true
+          fi
+
+      - name: Update tracking issue on conflict or gate failure
+        if: |
+          steps.check.outputs.has_changes == 'true' &&
+          env.FORCE_PR != 'true' &&
+          (steps.merge.outputs.passed != 'true' || steps.gate.outputs.passed == 'false')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          gh label create "${TRACKING_ISSUE_LABEL}" \
+            --color "B60205" \
+            --description "Automated upstream sync is blocked; needs maintainer attention." \
+            --repo "${{ github.repository }}" 2>/dev/null || true
+
+          STATUS=""
+          [ "${{ steps.merge.outputs.passed }}" != "true" ] && STATUS="${STATUS}- :warning: merge conflict or merge failure\n"
+          [ "${{ steps.gate.outputs.passed }}" = "false" ] && STATUS="${STATUS}- :x: npm install/lint/build gate failed\n"
+
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BODY=$(cat <<EOF
+          Automated upstream sync is blocked. This issue is the single tracking place and will be auto-closed after a later sync succeeds.
+
+          **Latest blocked attempt** ($(date -u +%Y-%m-%dT%H:%M:%SZ))
+
+          - Upstream HEAD: \`${{ steps.check.outputs.upstream_head }}\`
+          - Upstream tag: \`${{ steps.check.outputs.upstream_tag }}\`
+          - Sync branch: \`${{ steps.branch.outputs.name }}\`
+          - Workflow run: ${RUN_URL}
+
+          ### Gate status
+          ${STATUS}
+
+          <details><summary>Conflict files</summary>
+
+          \`\`\`
+          ${CONFLICT_FILES:-<none>}
+          \`\`\`
+
+          </details>
+
+          <details><summary>Merge tail</summary>
+
+          \`\`\`
+          ${MERGE_TAIL:-<no merge log captured>}
+          \`\`\`
+
+          </details>
+
+          <details><summary>Gate tail</summary>
+
+          \`\`\`
+          ${GATE_TAIL:-<no gate log captured>}
+          \`\`\`
+
+          </details>
+          EOF
+          )
+
+          ISSUE=$(gh issue list \
+            --repo "${{ github.repository }}" \
+            --state open \
+            --label "${TRACKING_ISSUE_LABEL}" \
+            --json number \
+            --jq '.[0].number' || true)
+
+          if [ -z "${ISSUE}" ] || [ "${ISSUE}" = "null" ]; then
+            gh issue create \
+              --repo "${{ github.repository }}" \
+              --title "upstream-sync blocked: needs maintainer attention" \
+              --label "${TRACKING_ISSUE_LABEL}" \
+              --assignee kaitranntt \
+              --body "${BODY}"
+          else
+            gh issue comment "${ISSUE}" --repo "${{ github.repository }}" --body "${BODY}"
+          fi
+          set -e

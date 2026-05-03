@@ -1,0 +1,147 @@
+name: Sync Fork Release Tag
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '47 * * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: sync-release-tag
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "cpamc-fork-sync[bot]"
+          git config user.email "cpamc-fork-sync@users.noreply.github.com"
+
+      - name: Fetch upstream tags
+        run: |
+          git remote add upstream https://github.com/router-for-me/Cli-Proxy-API-Management-Center.git
+          git fetch upstream main --tags
+
+      - name: Create missing fork release tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # If HEAD already has a released tag, do not create another one. This
+          # keeps the manually published v1.10.2 dashboard release canonical.
+          for tag in $(git tag --points-at HEAD --list 'v*' --sort=-v:refname); do
+            if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              echo "[i] HEAD is already released as ${tag}; nothing to tag."
+              exit 0
+            fi
+          done
+
+          UPSTREAM_TAG=""
+          if [ -f .cpamc-fork-upstream.env ]; then
+            # shellcheck disable=SC1091
+            . ./.cpamc-fork-upstream.env
+          fi
+
+          if ! echo "${UPSTREAM_TAG}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            UPSTREAM_TAG=$(git ls-remote --tags --refs upstream 'v[0-9]*.[0-9]*.[0-9]*' \
+              | awk '{print $2}' \
+              | sed 's|refs/tags/||' \
+              | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -1 || true)
+          fi
+
+          if [ -z "${UPSTREAM_TAG}" ]; then
+            echo "[i] No synced upstream release tag found; nothing to tag."
+            exit 0
+          fi
+
+          latest_release_tag=""
+          for tag in $(git tag --merged HEAD --list 'v*' --sort=-v:refname); do
+            if gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              latest_release_tag="${tag}"
+              break
+            fi
+          done
+
+          if [ -n "${latest_release_tag}" ]; then
+            changed_paths="$(git diff --name-only "${latest_release_tag}..HEAD" || true)"
+            releasable_paths="$(echo "${changed_paths}" | grep -Ev '^(\.github/|\.cpamc-fork-upstream\.env$)' || true)"
+            if [ -z "${changed_paths}" ]; then
+              echo "[i] No changes since ${latest_release_tag}; nothing to tag."
+              exit 0
+            fi
+            if [ -z "${releasable_paths}" ]; then
+              echo "[i] Only fork automation metadata changed since ${latest_release_tag}; release asset unchanged."
+              exit 0
+            fi
+          fi
+
+          dispatch_release() {
+            local tag="$1"
+            gh workflow run release.yml --repo "${GITHUB_REPOSITORY}" --ref "${GITHUB_REF_NAME}" -f tag="${tag}"
+          }
+
+          latest_release_core=""
+          if [ -n "${latest_release_tag}" ]; then
+            latest_release_core="$(echo "${latest_release_tag}" | sed -E 's/^((v[0-9]+\.[0-9]+\.[0-9]+))(-[0-9]+)?$/\1/')"
+          fi
+
+          RELEASE_BASE_TAG="${UPSTREAM_TAG}"
+          if echo "${latest_release_core}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            RELEASE_BASE_TAG="$(printf "%s\n%s\n" "${UPSTREAM_TAG}" "${latest_release_core}" | sort -V | tail -1)"
+          fi
+
+          start_suffix=0
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_BASE_TAG}" >/dev/null 2>&1; then
+            start_suffix=1
+          fi
+
+          next_tag=""
+          for i in $(seq "${start_suffix}" 20); do
+            candidate="${RELEASE_BASE_TAG}-${i}"
+            if ! git ls-remote --exit-code --tags origin "refs/tags/${candidate}" >/dev/null 2>&1; then
+              next_tag="${candidate}"
+              break
+            fi
+
+            candidate_sha="$(git rev-list -n 1 "${candidate}" 2>/dev/null || true)"
+            head_sha="$(git rev-parse HEAD)"
+            if [ "${candidate_sha}" = "${head_sha}" ]; then
+              if gh release view "${candidate}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+                echo "[i] ${candidate} release already exists for HEAD; nothing to tag."
+                exit 0
+              fi
+              echo "[i] ${candidate} tag already exists for HEAD but release is missing; dispatching release."
+              dispatch_release "${candidate}"
+              exit 0
+            fi
+          done
+
+          if [ -z "${next_tag}" ]; then
+            echo "[!] Could not find an unused fork tag suffix for ${RELEASE_BASE_TAG}."
+            exit 1
+          fi
+
+          echo "[i] Creating ${next_tag} for release base ${RELEASE_BASE_TAG} and upstream ${UPSTREAM_TAG}."
+          git tag -a "${next_tag}" -m "CPAMC ${next_tag} (upstream ${UPSTREAM_TAG})"
+          git push origin "refs/tags/${next_tag}"
+          dispatch_release "${next_tag}"
