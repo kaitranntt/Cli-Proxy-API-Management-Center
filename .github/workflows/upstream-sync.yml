@@ -80,7 +80,7 @@ jobs:
         run: git remote add upstream https://github.com/router-for-me/Cli-Proxy-API-Management-Center.git
 
       - name: Fetch upstream
-        run: git fetch upstream main --tags
+        run: git fetch upstream main
 
       - name: Check for new upstream commits
         id: check
