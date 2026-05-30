@@ -15,6 +15,7 @@ import iconAntigravity from '@/assets/icons/antigravity.svg';
 import iconGemini from '@/assets/icons/gemini.svg';
 import iconKimiLight from '@/assets/icons/kimi-light.svg';
 import iconKimiDark from '@/assets/icons/kimi-dark.svg';
+import iconQoder from '@/assets/icons/qoder.svg';
 import iconVertex from '@/assets/icons/vertex.svg';
 
 interface ProviderState {
@@ -62,12 +63,55 @@ function getErrorStatus(error: unknown): number | undefined {
   return typeof error.status === 'number' ? error.status : undefined;
 }
 
-const PROVIDERS: { id: OAuthProvider; titleKey: string; hintKey: string; urlLabelKey: string; icon: string | { light: string; dark: string } }[] = [
-  { id: 'codex', titleKey: 'auth_login.codex_oauth_title', hintKey: 'auth_login.codex_oauth_hint', urlLabelKey: 'auth_login.codex_oauth_url_label', icon: iconCodex },
-  { id: 'anthropic', titleKey: 'auth_login.anthropic_oauth_title', hintKey: 'auth_login.anthropic_oauth_hint', urlLabelKey: 'auth_login.anthropic_oauth_url_label', icon: iconClaude },
-  { id: 'antigravity', titleKey: 'auth_login.antigravity_oauth_title', hintKey: 'auth_login.antigravity_oauth_hint', urlLabelKey: 'auth_login.antigravity_oauth_url_label', icon: iconAntigravity },
-  { id: 'gemini-cli', titleKey: 'auth_login.gemini_cli_oauth_title', hintKey: 'auth_login.gemini_cli_oauth_hint', urlLabelKey: 'auth_login.gemini_cli_oauth_url_label', icon: iconGemini },
-  { id: 'kimi', titleKey: 'auth_login.kimi_oauth_title', hintKey: 'auth_login.kimi_oauth_hint', urlLabelKey: 'auth_login.kimi_oauth_url_label', icon: { light: iconKimiLight, dark: iconKimiDark } }
+const PROVIDERS: {
+  id: OAuthProvider;
+  titleKey: string;
+  hintKey: string;
+  urlLabelKey: string;
+  icon: string | { light: string; dark: string };
+}[] = [
+  {
+    id: 'codex',
+    titleKey: 'auth_login.codex_oauth_title',
+    hintKey: 'auth_login.codex_oauth_hint',
+    urlLabelKey: 'auth_login.codex_oauth_url_label',
+    icon: iconCodex,
+  },
+  {
+    id: 'anthropic',
+    titleKey: 'auth_login.anthropic_oauth_title',
+    hintKey: 'auth_login.anthropic_oauth_hint',
+    urlLabelKey: 'auth_login.anthropic_oauth_url_label',
+    icon: iconClaude,
+  },
+  {
+    id: 'antigravity',
+    titleKey: 'auth_login.antigravity_oauth_title',
+    hintKey: 'auth_login.antigravity_oauth_hint',
+    urlLabelKey: 'auth_login.antigravity_oauth_url_label',
+    icon: iconAntigravity,
+  },
+  {
+    id: 'gemini-cli',
+    titleKey: 'auth_login.gemini_cli_oauth_title',
+    hintKey: 'auth_login.gemini_cli_oauth_hint',
+    urlLabelKey: 'auth_login.gemini_cli_oauth_url_label',
+    icon: iconGemini,
+  },
+  {
+    id: 'kimi',
+    titleKey: 'auth_login.kimi_oauth_title',
+    hintKey: 'auth_login.kimi_oauth_hint',
+    urlLabelKey: 'auth_login.kimi_oauth_url_label',
+    icon: { light: iconKimiLight, dark: iconKimiDark },
+  },
+  {
+    id: 'qoder',
+    titleKey: 'auth_login.qoder_oauth_title',
+    hintKey: 'auth_login.qoder_oauth_hint',
+    urlLabelKey: 'auth_login.qoder_oauth_url_label',
+    icon: iconQoder,
+  },
 ];
 
 const CALLBACK_SUPPORTED: OAuthProvider[] = ['codex', 'anthropic', 'antigravity', 'gemini-cli'];
@@ -85,11 +129,13 @@ export function OAuthPage() {
   const navigate = useNavigate();
   const { showNotification } = useNotificationStore();
   const resolvedTheme = useThemeStore((state) => state.resolvedTheme);
-  const [states, setStates] = useState<Record<OAuthProvider, ProviderState>>({} as Record<OAuthProvider, ProviderState>);
+  const [states, setStates] = useState<Record<OAuthProvider, ProviderState>>(
+    {} as Record<OAuthProvider, ProviderState>
+  );
   const [vertexState, setVertexState] = useState<VertexImportState>({
     fileName: '',
     location: '',
-    loading: false
+    loading: false,
   });
   const pollingTimers = useRef<Partial<Record<OAuthProvider, number>>>({});
   const successResetTimers = useRef<Partial<Record<OAuthProvider, number>>>({});
@@ -115,7 +161,7 @@ export function OAuthPage() {
   const updateProviderState = (provider: OAuthProvider, next: Partial<ProviderState>) => {
     setStates((prev) => ({
       ...prev,
-      [provider]: { ...(prev[provider] ?? {}), ...next }
+      [provider]: { ...(prev[provider] ?? {}), ...next },
     }));
   };
 
@@ -150,7 +196,7 @@ export function OAuthPage() {
       }
       return {
         ...prev,
-        [provider]: next
+        [provider]: next,
       };
     });
   };
@@ -167,7 +213,7 @@ export function OAuthPage() {
       callbackUrl: '',
       callbackSubmitting: false,
       callbackStatus: undefined,
-      callbackError: undefined
+      callbackError: undefined,
     });
     successResetTimers.current[provider] = window.setTimeout(() => {
       resetProviderAttempt(provider);
@@ -192,7 +238,11 @@ export function OAuthPage() {
           delete pollingTimers.current[provider];
         }
       } catch (err: unknown) {
-        updateProviderState(provider, { status: 'error', error: getErrorMessage(err), polling: false });
+        updateProviderState(provider, {
+          status: 'error',
+          error: getErrorMessage(err),
+          polling: false,
+        });
         window.clearInterval(timer);
         delete pollingTimers.current[provider];
       }
@@ -221,7 +271,7 @@ export function OAuthPage() {
       error: undefined,
       callbackStatus: undefined,
       callbackError: undefined,
-      callbackUrl: ''
+      callbackUrl: '',
     });
     try {
       const res = await oauthApi.startAuth(
@@ -235,12 +285,17 @@ export function OAuthPage() {
           state: undefined,
           status: 'error',
           error: message,
-          polling: false
+          polling: false,
         });
         showNotification(message, 'error');
         return;
       }
-      updateProviderState(provider, { url: res.url, state: res.state, status: 'waiting', polling: true });
+      updateProviderState(provider, {
+        url: res.url,
+        state: res.state,
+        status: 'waiting',
+        polling: true,
+      });
       startPolling(provider, res.state);
     } catch (err: unknown) {
       const message = getErrorMessage(err);
@@ -270,7 +325,7 @@ export function OAuthPage() {
     updateProviderState(provider, {
       callbackSubmitting: true,
       callbackStatus: undefined,
-      callbackError: undefined
+      callbackError: undefined,
     });
     try {
       await oauthApi.submitCallback(provider, redirectUrl);
@@ -282,13 +337,13 @@ export function OAuthPage() {
       const errorMessage =
         status === 404
           ? t('auth_login.oauth_callback_upgrade_hint', {
-              defaultValue: 'Please update CLI Proxy API or check the connection.'
+              defaultValue: 'Please update CLI Proxy API or check the connection.',
             })
           : message || undefined;
       updateProviderState(provider, {
         callbackSubmitting: false,
         callbackStatus: 'error',
-        callbackError: errorMessage
+        callbackError: errorMessage,
       });
       const notificationMessage = errorMessage
         ? `${t('auth_login.oauth_callback_error')} ${errorMessage}`
@@ -314,7 +369,7 @@ export function OAuthPage() {
       file,
       fileName: file.name,
       error: undefined,
-      result: undefined
+      result: undefined,
     }));
     event.target.value = '';
   };
@@ -337,7 +392,7 @@ export function OAuthPage() {
         projectId: res.project_id,
         email: res.email,
         location: res.location,
-        authFile: res['auth-file'] ?? res.auth_file
+        authFile: res['auth-file'] ?? res.auth_file,
       };
       setVertexState((prev) => ({ ...prev, loading: false, result }));
       showNotification(t('vertex_import.success'), 'success');
@@ -346,7 +401,7 @@ export function OAuthPage() {
       setVertexState((prev) => ({
         ...prev,
         loading: false,
-        error: message || t('notification.upload_failed')
+        error: message || t('notification.upload_failed'),
       }));
       const notification = message
         ? `${t('notification.upload_failed')}: ${message}`
@@ -370,7 +425,7 @@ export function OAuthPage() {
           const statusBadgeClassName = [
             'status-badge',
             state.status === 'success' ? 'success' : '',
-            state.status === 'error' ? 'error' : ''
+            state.status === 'error' ? 'error' : '',
           ]
             .filter(Boolean)
             .join(' ');
@@ -406,7 +461,7 @@ export function OAuthPage() {
                         onChange={(e) =>
                           updateProviderState(provider.id, {
                             projectId: e.target.value,
-                            projectIdError: undefined
+                            projectIdError: undefined,
                           })
                         }
                         placeholder={t('auth_login.gemini_cli_project_id_placeholder')}
@@ -441,7 +496,7 @@ export function OAuthPage() {
                           updateProviderState(provider.id, {
                             callbackUrl: e.target.value,
                             callbackStatus: undefined,
-                            callbackError: undefined
+                            callbackError: undefined,
                           })
                         }
                         placeholder={t('auth_login.oauth_callback_placeholder')}
@@ -513,7 +568,7 @@ export function OAuthPage() {
               onChange={(e) =>
                 setVertexState((prev) => ({
                   ...prev,
-                  location: e.target.value
+                  location: e.target.value,
                 }))
               }
               placeholder={t('vertex_import.location_placeholder')}
@@ -541,18 +596,16 @@ export function OAuthPage() {
                 onChange={handleVertexFileChange}
               />
             </div>
-            {vertexState.error && (
-              <div className="status-badge error">
-                {vertexState.error}
-              </div>
-            )}
+            {vertexState.error && <div className="status-badge error">{vertexState.error}</div>}
             {vertexState.result && (
               <div className={styles.connectionBox}>
                 <div className={styles.connectionLabel}>{t('vertex_import.result_title')}</div>
                 <div className={styles.keyValueList}>
                   {vertexState.result.projectId && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('vertex_import.result_project')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_project')}
+                      </span>
                       <span className={styles.keyValueValue}>{vertexState.result.projectId}</span>
                     </div>
                   )}
@@ -564,7 +617,9 @@ export function OAuthPage() {
                   )}
                   {vertexState.result.location && (
                     <div className={styles.keyValueItem}>
-                      <span className={styles.keyValueKey}>{t('vertex_import.result_location')}</span>
+                      <span className={styles.keyValueKey}>
+                        {t('vertex_import.result_location')}
+                      </span>
                       <span className={styles.keyValueValue}>{vertexState.result.location}</span>
                     </div>
                   )}

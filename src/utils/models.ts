@@ -14,11 +14,12 @@ const MODEL_CATEGORIES = [
   { id: 'claude', label: 'Claude', patterns: [/claude/i] },
   { id: 'gemini', label: 'Gemini', patterns: [/gemini/i, /\bgai\b/i] },
   { id: 'kimi', label: 'Kimi', patterns: [/kimi/i] },
+  { id: 'qoder', label: 'Qoder', patterns: [/qoder/i] },
   { id: 'qwen', label: 'Qwen', patterns: [/qwen/i] },
   { id: 'glm', label: 'GLM', patterns: [/glm/i, /chatglm/i] },
   { id: 'grok', label: 'Grok', patterns: [/grok/i] },
   { id: 'deepseek', label: 'DeepSeek', patterns: [/deepseek/i] },
-  { id: 'minimax', label: 'MiniMax', patterns: [/minimax/i, /abab/i] }
+  { id: 'minimax', label: 'MiniMax', patterns: [/minimax/i, /abab/i] },
 ];
 
 const matchCategory = (text: string) => {
@@ -90,11 +91,14 @@ export interface ModelGroup {
   items: ModelInfo[];
 }
 
-export function classifyModels(models: ModelInfo[] = [], { otherLabel = 'Other' } = {}): ModelGroup[] {
+export function classifyModels(
+  models: ModelInfo[] = [],
+  { otherLabel = 'Other' } = {}
+): ModelGroup[] {
   const groups: ModelGroup[] = MODEL_CATEGORIES.map((category) => ({
     id: category.id,
     label: category.label,
-    items: []
+    items: [],
   }));
 
   const otherGroup: ModelGroup = { id: 'other', label: otherLabel, items: [] };

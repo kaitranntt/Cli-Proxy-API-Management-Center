@@ -14,6 +14,7 @@ export type AuthFileType =
   | 'claude'
   | 'codex'
   | 'antigravity'
+  | 'qoder'
   | 'iflow'
   | 'vertex'
   | 'empty'

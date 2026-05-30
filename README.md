@@ -89,8 +89,8 @@ See `api.md` for the full authentication rules, server-side limits, and edge cas
   - OpenAI-compatible providers (multiple API keys, custom headers, model alias import via `/v1/models`, optional browser-side "chat/completions" test).
   - Ampcode integration (upstream URL/key, force mappings, model mapping table).
 - **Auth Files**: upload/download/delete JSON credentials, filter/search/pagination, runtime-only indicators, view supported models per credential (when the server supports it), manage OAuth excluded models (supports `*` wildcards), configure OAuth model alias mappings.
-- **OAuth**: start OAuth/device flows for supported providers, poll status, optionally submit callback `redirect_url`; includes iFlow cookie import.
-- **Quota Management**: manage quota limits and usage for Claude, Antigravity, Codex, Gemini CLI, and other providers.
+- **OAuth**: start OAuth/device flows for supported providers, including Qoder, poll status, optionally submit callback `redirect_url`; includes iFlow cookie import.
+- **Quota Management**: manage quota limits and usage for Claude, Antigravity, Codex, Gemini CLI, Kimi, Qoder, and other providers.
 - **Usage Statistics**: view request totals, token totals, hourly trends, and per API/model usage from `/v0/management/usage`.
 - **Config**: edit `/config.yaml` in-browser with YAML highlighting + search, then save/reload.
 - **Logs**: tail logs with incremental polling, auto-refresh, search, hide management traffic, clear logs; download request error log files.

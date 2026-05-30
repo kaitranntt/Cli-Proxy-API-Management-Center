@@ -100,7 +100,6 @@
   }
 }
 
-
 .filterAllIconWrap {
   position: relative;
   border-color: color-mix(in srgb, var(--primary-color) 20%, var(--border-color));
@@ -118,7 +117,6 @@
   display: block;
   color: color-mix(in srgb, var(--primary-color) 70%, var(--text-primary));
 }
-
 
 .filterContent {
   display: flex;
@@ -478,6 +476,10 @@
 
 .kimiCard {
   background-image: linear-gradient(180deg, rgba(220, 232, 255, 0.08), transparent);
+}
+
+.qoderCard {
+  background-image: linear-gradient(180deg, rgba(221, 247, 255, 0.08), transparent);
 }
 
 .quotaSection {
