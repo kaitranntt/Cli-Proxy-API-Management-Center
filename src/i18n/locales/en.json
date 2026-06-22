@@ -145,7 +145,7 @@
     "quick_actions": "Quick Actions",
     "current_config": "Current Configuration",
     "management_keys": "Management Keys",
-    "provider_keys_detail": "G:{{gemini}} C:{{codex}} Cl:{{claude}} V:{{vertex}} O:{{openai}} Amp:{{ampcode}}",
+    "provider_keys_detail": "G:{{gemini}} C:{{codex}} Cl:{{claude}} V:{{vertex}} O:{{openai}} Amp:{{ampcode}} OAuth:{{oauth}}",
     "oauth_credentials": "OAuth Credentials",
     "edit_settings": "Edit Settings",
     "routing_strategy": "Routing Strategy",
