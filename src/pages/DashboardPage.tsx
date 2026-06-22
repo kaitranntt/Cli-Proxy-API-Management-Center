@@ -201,6 +201,12 @@ export function DashboardPage() {
       (providerStats.claude ?? 0) +
       (providerStats.openai ?? 0)
     : 0;
+  // OAuth-authenticated providers (Codex/Gemini/Antigravity accounts) live as
+  // auth files, not as static api-key entries, so the static-key sum above
+  // misses them. Count them too so the AI Providers tile reflects every
+  // configured provider instead of showing 0 for OAuth-only setups.
+  const oauthProviderCount = stats.authFiles ?? 0;
+  const totalProviders = totalProviderKeys + oauthProviderCount;
 
   const quickStats: QuickStat[] = [
     {
@@ -213,7 +219,7 @@ export function DashboardPage() {
     },
     {
       label: t('nav.ai_providers'),
-      value: loading ? '-' : providerStatsReady ? totalProviderKeys : '-',
+      value: loading ? '-' : providerStatsReady ? totalProviders : '-',
       icon: <IconBot size={24} />,
       path: '/ai-providers',
       loading: loading,
@@ -222,7 +228,8 @@ export function DashboardPage() {
             gemini: providerStats.gemini ?? '-',
             codex: providerStats.codex ?? '-',
             claude: providerStats.claude ?? '-',
-            openai: providerStats.openai ?? '-'
+            openai: providerStats.openai ?? '-',
+            oauth: oauthProviderCount
           })
         : undefined
     },
