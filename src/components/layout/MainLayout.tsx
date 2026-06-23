@@ -1,5 +1,6 @@
 import {
   ReactNode,
+  RefObject,
   SVGProps,
   useCallback,
   useEffect,
@@ -12,16 +13,20 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
 import { MainRoutes } from '@/router/MainRoutes';
+import { pluginsApi } from '@/services/api';
 import {
   IconSidebarAuthFiles,
   IconSidebarConfig,
   IconSidebarDashboard,
   IconSidebarLogs,
   IconSidebarOauth,
+  IconSidebarPlugins,
   IconSidebarProviders,
   IconSidebarQuota,
+  IconSidebarStore,
   IconSidebarSystem,
   IconSidebarUsage,
+  IconChevronDown,
 } from '@/components/ui/icons';
 import { INLINE_LOGO_JPEG } from '@/assets/logoInline';
 import {
@@ -31,6 +36,12 @@ import {
   useNotificationStore,
   useThemeStore,
 } from '@/stores';
+import {
+  collectPluginResourceEntries,
+  PLUGIN_RESOURCES_REFRESH_EVENT,
+  resolvePluginAssetURL,
+  type PluginResourceEntry,
+} from '@/features/plugins/pluginResources';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -43,10 +54,86 @@ const sidebarIcons: Record<string, ReactNode> = {
   oauth: <IconSidebarOauth size={18} />,
   quota: <IconSidebarQuota size={18} />,
   usage: <IconSidebarUsage size={18} />,
+  plugins: <IconSidebarPlugins size={18} />,
+  pluginStore: <IconSidebarStore size={18} />,
   config: <IconSidebarConfig size={18} />,
   logs: <IconSidebarLogs size={18} />,
   system: <IconSidebarSystem size={18} />,
 };
+
+interface SidebarNavLinkItem {
+  kind?: 'link';
+  path: string;
+  labelKey?: string;
+  metaKey?: string;
+  label?: string;
+  meta?: string;
+  icon: ReactNode;
+}
+
+interface SidebarNavDrawerItem {
+  kind: 'drawer';
+  id: string;
+  label: string;
+  meta?: string;
+  icon: ReactNode;
+  children: SidebarNavLinkItem[];
+}
+
+type SidebarNavItem = SidebarNavLinkItem | SidebarNavDrawerItem;
+
+interface SidebarNavGroup {
+  id: string;
+  labelKey: string;
+  items: SidebarNavItem[];
+}
+
+const flattenNavItems = (items: SidebarNavItem[]): SidebarNavLinkItem[] =>
+  items.flatMap((item) => item.kind === 'drawer' ? item.children : [item]);
+
+/** 点击菜单外或按下 Escape 时关闭弹出菜单 */
+function useMenuDismiss(
+  open: boolean,
+  menuRef: RefObject<HTMLDivElement | null>,
+  onClose: () => void
+) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!menuRef.current?.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        onClose();
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open, menuRef, onClose]);
+}
+
+function PluginSidebarIcon({ src }: { src: string }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src) && !failed;
+
+  return showImage ? (
+    <img src={src} alt="" onError={() => setFailed(true)} />
+  ) : (
+    <IconSidebarPlugins size={18} />
+  );
+}
 
 // Header action icons - smaller size for header buttons
 const headerIconProps: SVGProps<SVGSVGElement> = {
@@ -214,6 +301,9 @@ export function MainLayout() {
   const location = useLocation();
 
   const logout = useAuthStore((state) => state.logout);
+  const connectionStatus = useAuthStore((state) => state.connectionStatus);
+  const apiBase = useAuthStore((state) => state.apiBase);
+  const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
 
   const fetchConfig = useConfigStore((state) => state.fetchConfig);
   const clearCache = useConfigStore((state) => state.clearCache);
@@ -227,6 +317,10 @@ export function MainLayout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
+  const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
+  const [expandedPluginResourceIDs, setExpandedPluginResourceIDs] = useState<Set<string>>(
+    () => new Set()
+  );
   const contentRef = useRef<HTMLDivElement | null>(null);
   const languageMenuRef = useRef<HTMLDivElement | null>(null);
   const themeMenuRef = useRef<HTMLDivElement | null>(null);
@@ -235,9 +329,10 @@ export function MainLayout() {
   const fullBrandName = 'CLI Proxy API Management Center';
   const abbrBrandName = t('title.abbr');
   const isLogsPage = location.pathname.startsWith('/logs');
+  const isPluginResourcePage = location.pathname.startsWith('/plugin-pages');
   const showSidebarLabels = !sidebarCollapsed || sidebarOpen;
 
-  // 将顶部悬浮控制区高度写入 CSS 变量，供移动端粘性元素和浮层避让。
+  // Keep floating header height available to sticky mobile elements and overlays.
   useLayoutEffect(() => {
     const updateHeaderHeight = () => {
       const height = headerRef.current?.offsetHeight;
@@ -266,7 +361,7 @@ export function MainLayout() {
     };
   }, []);
 
-  // 将主内容区的中心点写入 CSS 变量，供底部浮层（配置面板操作栏、提供商导航）对齐到内容区
+  // Keep the content center available to bottom overlays that align with the main area.
   useLayoutEffect(() => {
     const updateContentCenter = () => {
       const el = contentRef.current;
@@ -298,57 +393,10 @@ export function MainLayout() {
     };
   }, []);
 
-  useEffect(() => {
-    if (!languageMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!languageMenuRef.current?.contains(event.target as Node)) {
-        setLanguageMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLanguageMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [languageMenuOpen]);
-
-  useEffect(() => {
-    if (!themeMenuOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: MouseEvent) => {
-      if (!themeMenuRef.current?.contains(event.target as Node)) {
-        setThemeMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setThemeMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [themeMenuOpen]);
+  const closeLanguageMenu = useCallback(() => setLanguageMenuOpen(false), []);
+  const closeThemeMenu = useCallback(() => setThemeMenuOpen(false), []);
+  useMenuDismiss(languageMenuOpen, languageMenuRef, closeLanguageMenu);
+  useMenuDismiss(themeMenuOpen, themeMenuRef, closeThemeMenu);
 
   const toggleLanguageMenu = useCallback(() => {
     setLanguageMenuOpen((prev) => !prev);
@@ -381,11 +429,89 @@ export function MainLayout() {
 
   useEffect(() => {
     fetchConfig().catch(() => {
-      // ignore initial failure; login flow会提示
+      // Ignore the initial failure; the login flow shows the user-facing prompt.
     });
   }, [fetchConfig]);
 
-  const navGroups = [
+  const loadPluginResources = useCallback(async () => {
+    if (connectionStatus !== 'connected' || !supportsPlugin) {
+      setPluginResources([]);
+      return;
+    }
+
+    try {
+      const plugins = await pluginsApi.list();
+      setPluginResources(collectPluginResourceEntries(plugins.plugins));
+    } catch {
+      setPluginResources([]);
+    }
+  }, [connectionStatus, supportsPlugin]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadPluginResources();
+    }, 0);
+
+    window.addEventListener(PLUGIN_RESOURCES_REFRESH_EVENT, loadPluginResources);
+
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener(PLUGIN_RESOURCES_REFRESH_EVENT, loadPluginResources);
+    };
+  }, [apiBase, loadPluginResources]);
+
+  const pluginResourceGroups = pluginResources.reduce<
+    Array<{ pluginID: string; pluginTitle: string; entries: PluginResourceEntry[] }>
+  >((groups, resource) => {
+    const group = groups.find((item) => item.pluginID === resource.pluginID);
+    if (group) {
+      group.entries.push(resource);
+      return groups;
+    }
+
+    groups.push({
+      pluginID: resource.pluginID,
+      pluginTitle: resource.pluginTitle,
+      entries: [resource],
+    });
+    return groups;
+  }, []);
+
+  const pluginPageNavItems: SidebarNavItem[] = supportsPlugin
+    ? pluginResourceGroups.flatMap((group): SidebarNavItem[] => {
+        if (group.entries.length === 1) {
+          const resource = group.entries[0];
+          const pluginLogo = resolvePluginAssetURL(resource.pluginLogo, apiBase);
+          return [
+            {
+              path: resource.route,
+              label: resource.label,
+              meta: resource.description,
+              icon: <PluginSidebarIcon src={pluginLogo} />,
+            },
+          ];
+        }
+
+        const pluginLogo = resolvePluginAssetURL(group.entries[0]?.pluginLogo ?? '', apiBase);
+        return [
+          {
+            kind: 'drawer',
+            id: `plugin-pages-${group.pluginID}`,
+            label: group.pluginTitle,
+            meta: t('plugin_resource.page_count', { count: group.entries.length }),
+            icon: <PluginSidebarIcon src={pluginLogo} />,
+            children: group.entries.map((resource) => ({
+              path: resource.route,
+              label: resource.label,
+              meta: resource.description,
+              icon: <span className="nav-sub-dot" aria-hidden="true" />,
+            })),
+          },
+        ];
+      })
+    : [];
+
+  const navGroups: SidebarNavGroup[] = [
     {
       id: 'operate',
       labelKey: 'nav_groups.operate',
@@ -456,6 +582,22 @@ export function MainLayout() {
           metaKey: 'nav_meta.config_management',
           icon: sidebarIcons.config,
         },
+        ...(supportsPlugin
+          ? [
+              {
+                path: '/plugins',
+                labelKey: 'nav.plugins',
+                metaKey: 'nav_meta.plugins',
+                icon: sidebarIcons.plugins,
+              },
+              {
+                path: '/plugin-store',
+                labelKey: 'nav.plugin_store',
+                metaKey: 'nav_meta.plugin_store',
+                icon: sidebarIcons.pluginStore,
+              },
+            ]
+          : []),
         {
           path: '/system',
           labelKey: 'nav.system_info',
@@ -464,27 +606,22 @@ export function MainLayout() {
         },
       ],
     },
+    ...(pluginPageNavItems.length > 0
+      ? [
+          {
+            id: 'plugin-pages',
+            labelKey: 'nav_groups.plugin_pages',
+            items: pluginPageNavItems,
+          },
+        ]
+      : []),
   ];
-  const navItems = navGroups.flatMap((group) => group.items);
+  const navItems = navGroups.flatMap((group) => flattenNavItems(group.items));
   const navOrder = navItems.map((item) => item.path);
   const getRouteOrder = (pathname: string) => {
     const trimmedPath =
       pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
     const normalizedPath = trimmedPath === '/dashboard' ? '/' : trimmedPath;
-
-    const aiProvidersIndex = navOrder.indexOf('/ai-providers');
-    if (aiProvidersIndex !== -1) {
-      if (normalizedPath === '/ai-providers') return aiProvidersIndex;
-      if (normalizedPath.startsWith('/ai-providers/')) {
-        if (normalizedPath.startsWith('/ai-providers/gemini')) return aiProvidersIndex + 0.1;
-        if (normalizedPath.startsWith('/ai-providers/codex')) return aiProvidersIndex + 0.2;
-        if (normalizedPath.startsWith('/ai-providers/claude')) return aiProvidersIndex + 0.3;
-        if (normalizedPath.startsWith('/ai-providers/vertex')) return aiProvidersIndex + 0.4;
-        if (normalizedPath.startsWith('/ai-providers/ampcode')) return aiProvidersIndex + 0.5;
-        if (normalizedPath.startsWith('/ai-providers/openai')) return aiProvidersIndex + 0.6;
-        return aiProvidersIndex + 0.05;
-      }
-    }
 
     const authFilesIndex = navOrder.indexOf('/auth-files');
     if (authFilesIndex !== -1) {
@@ -515,10 +652,7 @@ export function MainLayout() {
     const to = normalize(toPathname);
     const isAuthFiles = (pathname: string) =>
       pathname === '/auth-files' || pathname.startsWith('/auth-files/');
-    const isAiProviders = (pathname: string) =>
-      pathname === '/ai-providers' || pathname.startsWith('/ai-providers/');
     if (isAuthFiles(from) && isAuthFiles(to)) return 'ios';
-    if (isAiProviders(from) && isAiProviders(to)) return 'ios';
     return 'vertical';
   }, []);
 
@@ -526,6 +660,7 @@ export function MainLayout() {
     clearCache();
     const results = await Promise.allSettled([
       fetchConfig(undefined, true),
+      loadPluginResources(),
       triggerHeaderRefresh(),
     ]);
     const rejected = results.find((result) => result.status === 'rejected');
@@ -541,12 +676,93 @@ export function MainLayout() {
     }
     showNotification(t('notification.data_refreshed'), 'success');
   };
+
+  const togglePluginResourceDrawer = useCallback((drawerID: string) => {
+    setExpandedPluginResourceIDs((current) => {
+      const next = new Set(current);
+      if (next.has(drawerID)) {
+        next.delete(drawerID);
+      } else {
+        next.add(drawerID);
+      }
+      return next;
+    });
+  }, []);
+
+  const renderNavLink = (item: SidebarNavLinkItem, className = 'nav-item') => {
+    const itemLabel = item.label ?? (item.labelKey ? t(item.labelKey) : '');
+    const itemMeta = item.meta ?? (item.metaKey ? t(item.metaKey) : '');
+
+    return (
+      <NavLink
+        key={item.path}
+        to={item.path}
+        className={({ isActive }) => `${className} ${isActive ? 'active' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+        title={showSidebarLabels ? undefined : itemLabel}
+      >
+        <span className="nav-icon">{item.icon}</span>
+        {showSidebarLabels && (
+          <span className="nav-text">
+            <span className="nav-label">{itemLabel}</span>
+            {itemMeta ? <span className="nav-meta">{itemMeta}</span> : null}
+          </span>
+        )}
+      </NavLink>
+    );
+  };
+
+  const renderNavItem = (item: SidebarNavItem) => {
+    if (item.kind !== 'drawer') {
+      return renderNavLink(item);
+    }
+
+    const isActive = item.children.some((child) => child.path === location.pathname);
+    const isOpen = isActive || expandedPluginResourceIDs.has(item.id);
+
+    return (
+      <div className={`nav-drawer ${isOpen ? 'open' : ''}`} key={item.id}>
+        <button
+          type="button"
+          className={`nav-item nav-drawer-toggle ${isActive ? 'active' : ''} ${
+            isOpen ? 'open' : ''
+          }`}
+          onClick={() => togglePluginResourceDrawer(item.id)}
+          title={showSidebarLabels ? undefined : item.label}
+          aria-expanded={isOpen}
+        >
+          <span className="nav-icon">{item.icon}</span>
+          {showSidebarLabels && (
+            <>
+              <span className="nav-text">
+                <span className="nav-label">{item.label}</span>
+                {item.meta ? <span className="nav-meta">{item.meta}</span> : null}
+              </span>
+              <span className="nav-drawer-caret" aria-hidden="true">
+                <IconChevronDown size={14} />
+              </span>
+            </>
+          )}
+        </button>
+        {isOpen ? (
+          <div className="nav-sub-list">
+            {item.children.map((child) => renderNavLink(child, 'nav-item nav-sub-item'))}
+          </div>
+        ) : null}
+      </div>
+    );
+  };
+
   const mobileSidebarToggleLabel = sidebarOpen
     ? t('sidebar.toggle_collapse', { defaultValue: 'Close navigation' })
     : t('sidebar.toggle_expand', { defaultValue: 'Open navigation' });
 
   return (
-    <div className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''}`}>
+    <div
+      className={`app-shell ${sidebarCollapsed ? 'sidebar-is-collapsed' : ''} ${
+        isPluginResourcePage ? 'plugin-resource-shell' : ''
+      }`}
+    >
       <div className="top-gradient-blur" aria-hidden="true" />
 
       <header className="main-header" ref={headerRef}>
@@ -723,37 +939,30 @@ export function MainLayout() {
 
           <div className="nav-section">
             {navGroups.map((group, idx) => (
-              <div className="nav-group" key={group.id}>
+              <div
+                className={`nav-group ${group.id === 'plugin-pages' ? 'nav-group-bottom' : ''}`}
+                key={group.id}
+              >
                 {showSidebarLabels
                   ? <div className="nav-group-label">{t(group.labelKey)}</div>
                   : idx > 0 && <div className="nav-group-divider" aria-hidden="true" />}
-                {group.items.map((item) => {
-                  const itemLabel = t(item.labelKey);
-                  return (
-                    <NavLink
-                      key={item.path}
-                      to={item.path}
-                      className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-                      onClick={() => setSidebarOpen(false)}
-                      title={showSidebarLabels ? undefined : itemLabel}
-                    >
-                      <span className="nav-icon">{item.icon}</span>
-                      {showSidebarLabels && (
-                        <span className="nav-text">
-                          <span className="nav-label">{itemLabel}</span>
-                          <span className="nav-meta">{t(item.metaKey)}</span>
-                        </span>
-                      )}
-                    </NavLink>
-                  );
-                })}
+                {group.items.map((item) => renderNavItem(item))}
               </div>
             ))}
           </div>
         </aside>
 
-        <div className={`content${isLogsPage ? ' content-logs' : ''}`} ref={contentRef}>
-          <main className={`main-content${isLogsPage ? ' main-content-logs' : ''}`}>
+        <div
+          className={`content${isLogsPage ? ' content-logs' : ''}${
+            isPluginResourcePage ? ' content-plugin-resource' : ''
+          }`}
+          ref={contentRef}
+        >
+          <main
+            className={`main-content${isLogsPage ? ' main-content-logs' : ''}${
+              isPluginResourcePage ? ' main-content-plugin-resource' : ''
+            }`}
+          >
             <PageTransition
               render={(location) => <MainRoutes location={location} />}
               getRouteOrder={getRouteOrder}

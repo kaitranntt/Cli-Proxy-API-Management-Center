@@ -7,11 +7,15 @@ import { AuthFilesOAuthModelAliasEditPage } from '@/pages/AuthFilesOAuthModelAli
 import { OAuthPage } from '@/pages/OAuthPage';
 import { QuotaPage } from '@/pages/QuotaPage';
 import { UsagePage } from '@/pages/UsagePage';
+import { PluginResourcePage } from '@/features/plugins/PluginResourcePage';
+import { PluginsPage } from '@/features/plugins/PluginsPage';
+import { PluginStorePage } from '@/features/plugins/PluginStorePage';
 import { ConfigPage } from '@/pages/ConfigPage';
 import { LogsPage } from '@/pages/LogsPage';
 import { SystemPage } from '@/pages/SystemPage';
+import { useAuthStore } from '@/stores';
 
-const mainRoutes = [
+const createMainRoutes = (supportsPlugin: boolean) => [
   { path: '/', element: <DashboardPage /> },
   { path: '/dashboard', element: <DashboardPage /> },
   { path: '/settings', element: <Navigate to="/config" replace /> },
@@ -24,6 +28,18 @@ const mainRoutes = [
   { path: '/oauth', element: <OAuthPage /> },
   { path: '/quota', element: <QuotaPage /> },
   { path: '/usage', element: <UsagePage /> },
+  ...(supportsPlugin
+    ? [
+        { path: '/plugin-pages/:pluginId/:menuIndex', element: <PluginResourcePage /> },
+        { path: '/plugins', element: <PluginsPage /> },
+        { path: '/plugin-store', element: <PluginStorePage /> },
+        { path: '/plugins/*', element: <Navigate to="/plugins" replace /> },
+      ]
+    : [
+        { path: '/plugin-pages/*', element: <Navigate to="/" replace /> },
+        { path: '/plugins/*', element: <Navigate to="/" replace /> },
+        { path: '/plugin-store', element: <Navigate to="/" replace /> },
+      ]),
   { path: '/config', element: <ConfigPage /> },
   { path: '/logs', element: <LogsPage /> },
   { path: '/system', element: <SystemPage /> },
@@ -31,5 +47,6 @@ const mainRoutes = [
 ];
 
 export function MainRoutes({ location }: { location?: Location }) {
-  return useRoutes(mainRoutes, location);
+  const supportsPlugin = useAuthStore((state) => state.supportsPlugin);
+  return useRoutes(createMainRoutes(supportsPlugin), location);
 }
