@@ -8,85 +8,28 @@ export type TypeColorSet = { light: ThemeColors; dark?: ThemeColors };
 export type ResolvedTheme = 'light' | 'dark';
 
 // API payload types
-export interface GeminiCliQuotaBucket {
-  modelId?: string;
-  model_id?: string;
-  tokenType?: string;
-  token_type?: string;
-  remainingFraction?: number | string;
-  remaining_fraction?: number | string;
-  remainingAmount?: number | string;
-  remaining_amount?: number | string;
+export interface AntigravityQuotaSummaryBucketPayload {
+  bucketId?: string;
+  bucket_id?: string;
+  displayName?: string;
+  display_name?: string;
+  window?: string;
   resetTime?: string;
   reset_time?: string;
-}
-
-export interface GeminiCliQuotaPayload {
-  buckets?: GeminiCliQuotaBucket[];
-}
-
-export interface GeminiCliCredits {
-  creditType?: string;
-  credit_type?: string;
-  creditAmount?: string | number;
-  credit_amount?: string | number;
-}
-
-export interface GeminiCliUserTier {
-  id?: string;
-  name?: string;
+  remainingFraction?: number | string;
+  remaining_fraction?: number | string;
   description?: string;
-  availableCredits?: GeminiCliCredits[];
-  available_credits?: GeminiCliCredits[];
 }
 
-export interface GeminiCliCodeAssistPayload {
-  currentTier?: GeminiCliUserTier | null;
-  current_tier?: GeminiCliUserTier | null;
-  paidTier?: GeminiCliUserTier | null;
-  paid_tier?: GeminiCliUserTier | null;
-}
-
-export interface AntigravityQuotaInfo {
+export interface AntigravityQuotaSummaryGroupPayload {
   displayName?: string;
-  quotaInfo?: {
-    remainingFraction?: number | string;
-    remaining_fraction?: number | string;
-    remaining?: number | string;
-    resetTime?: string;
-    reset_time?: string;
-  };
-  quota_info?: {
-    remainingFraction?: number | string;
-    remaining_fraction?: number | string;
-    remaining?: number | string;
-    resetTime?: string;
-    reset_time?: string;
-  };
+  display_name?: string;
+  description?: string;
+  buckets?: AntigravityQuotaSummaryBucketPayload[];
 }
 
-export type AntigravityModelsPayload = Record<string, AntigravityQuotaInfo>;
-
-export interface AntigravityQuotaGroupDefinition {
-  id: string;
-  label: string;
-  identifiers: string[];
-  labelFromModel?: boolean;
-}
-
-export interface GeminiCliQuotaGroupDefinition {
-  id: string;
-  label: string;
-  preferredModelId?: string;
-  modelIds: string[];
-}
-
-export interface GeminiCliParsedBucket {
-  modelId: string;
-  tokenType: string | null;
-  remainingFraction: number | null;
-  remainingAmount: number | null;
-  resetTime: string | undefined;
+export interface AntigravityQuotaSummaryPayload {
+  groups?: AntigravityQuotaSummaryGroupPayload[];
 }
 
 export interface CodexUsageWindow {
@@ -119,6 +62,11 @@ export interface CodexAdditionalRateLimit {
   rateLimit?: CodexRateLimitInfo | null;
 }
 
+export interface CodexRateLimitResetCredits {
+  available_count?: number | string;
+  availableCount?: number | string;
+}
+
 export interface CodexUsagePayload {
   plan_type?: string;
   planType?: string;
@@ -128,6 +76,8 @@ export interface CodexUsagePayload {
   codeReviewRateLimit?: CodexRateLimitInfo | null;
   additional_rate_limits?: CodexAdditionalRateLimit[] | null;
   additionalRateLimits?: CodexAdditionalRateLimit[] | null;
+  rate_limit_reset_credits?: CodexRateLimitResetCredits | null;
+  rateLimitResetCredits?: CodexRateLimitResetCredits | null;
 }
 
 // Claude API payload types
@@ -197,34 +147,30 @@ export interface ClaudeQuotaState {
 export interface AntigravityQuotaGroup {
   id: string;
   label: string;
-  models: string[];
+  description?: string;
+  buckets: AntigravityQuotaBucket[];
+}
+
+export interface AntigravityQuotaSubscription {
+  plan: string | null;
+  tierName: string | null;
+  tierId: string | null;
+}
+
+export interface AntigravityQuotaBucket {
+  id: string;
+  label: string;
+  window?: string;
   remainingFraction: number;
   resetTime?: string;
+  description?: string;
 }
 
 export interface AntigravityQuotaState {
   status: 'idle' | 'loading' | 'success' | 'error';
   groups: AntigravityQuotaGroup[];
-  error?: string;
-  errorStatus?: number;
-}
-
-export interface GeminiCliQuotaBucketState {
-  id: string;
-  label: string;
-  remainingFraction: number | null;
-  remainingAmount: number | null;
-  resetTime: string | undefined;
-  tokenType: string | null;
-  modelIds?: string[];
-}
-
-export interface GeminiCliQuotaState {
-  status: 'idle' | 'loading' | 'success' | 'error';
-  buckets: GeminiCliQuotaBucketState[];
-  tierLabel?: string | null;
-  tierId?: string | null;
-  creditBalance?: number | null;
+  subscription?: AntigravityQuotaSubscription | null;
+  serverTimeOffsetMs?: number | null;
   error?: string;
   errorStatus?: number;
 }
@@ -242,6 +188,8 @@ export interface CodexQuotaState {
   status: 'idle' | 'loading' | 'success' | 'error';
   windows: CodexQuotaWindow[];
   planType?: string | null;
+  subscriptionActiveUntil?: string | number | null;
+  rateLimitResetCreditsAvailableCount?: number | null;
   error?: string;
   errorStatus?: number;
 }
