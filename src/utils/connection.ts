@@ -19,9 +19,15 @@ export const computeApiUrl = (base: string): string => {
 
 export const detectApiBaseFromLocation = (): string => {
   try {
-    const { protocol, hostname, port } = window.location;
+    const { protocol, hostname, port, pathname } = window.location;
     const normalizedPort = port ? `:${port}` : '';
-    return normalizeApiBase(`${protocol}//${hostname}${normalizedPort}`);
+    // Preserve the path prefix the panel is served from so the management API
+    // (a sibling of management.html, e.g. <prefix>/v0/management/*) stays reachable
+    // when the panel is hosted behind a reverse-proxy subpath. Strip the trailing
+    // file segment (e.g. management.html) and any trailing slash; root hosting
+    // collapses to an empty prefix, preserving the previous behaviour.
+    const directory = (pathname || '/').replace(/[^/]*$/, '').replace(/\/+$/, '');
+    return normalizeApiBase(`${protocol}//${hostname}${normalizedPort}${directory}`);
   } catch (error) {
     console.warn('Failed to detect api base from location, fallback to default', error);
     return normalizeApiBase(`http://localhost:${DEFAULT_API_PORT}`);
