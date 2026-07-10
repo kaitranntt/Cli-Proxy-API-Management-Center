@@ -1,12 +1,4 @@
-import {
-  Suspense,
-  lazy,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { createPortal } from 'react-dom';
 import type { ReactCodeMirrorRef } from '@uiw/react-codemirror';
@@ -176,7 +168,7 @@ export function ConfigPage() {
       // Keep the global config store in sync so sidebar / other pages reflect YAML changes immediately.
       try {
         useConfigStore.getState().clearCache();
-        await useConfigStore.getState().fetchConfig(undefined, true);
+        await useConfigStore.getState().fetchConfig(true);
       } catch (refreshError: unknown) {
         const message =
           refreshError instanceof Error
@@ -427,7 +419,11 @@ export function ConfigPage() {
   }, [lastSearchedQuery, performSearch]);
 
   // Keep bottom floating actions from covering page content by syncing its height to a CSS variable.
-  useActionBarHeightVar(floatingActionsRef, '--config-action-bar-height', shouldRenderFloatingActions);
+  useActionBarHeightVar(
+    floatingActionsRef,
+    '--config-action-bar-height',
+    shouldRenderFloatingActions
+  );
 
   // Status text
   const getStatusText = () => {
