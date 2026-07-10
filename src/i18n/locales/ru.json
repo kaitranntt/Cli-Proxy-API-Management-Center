@@ -1555,5 +1555,27 @@
     "modelCatalog": {
       "notLoaded": "Не загружено"
     }
+  },
+  "usage_stats": {
+    "title": "Статистика использования",
+    "subtitle": "Запросы и токены из runtime прокси.",
+    "refresh": "Обновить",
+    "last_updated": "Обновлено",
+    "load_failed": "Не удалось загрузить статистику",
+    "total_requests": "Всего запросов",
+    "total_tokens": "Всего токенов",
+    "success": "Успешно",
+    "failure": "Ошибки",
+    "requests_by_hour": "Запросы по часам",
+    "tokens_by_hour": "Токены по часам",
+    "top_models": "Топ моделей",
+    "api_breakdown": "API разбивка",
+    "api": "API",
+    "model": "Модель",
+    "requests": "Запросы",
+    "tokens": "Токены",
+    "failures": "Ошибки",
+    "models": "Модели",
+    "no_data": "Нет данных использования"
   }
 }

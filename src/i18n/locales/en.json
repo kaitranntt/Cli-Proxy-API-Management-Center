@@ -1577,5 +1577,27 @@
     "modelCatalog": {
       "notLoaded": "Not loaded"
     }
+  },
+  "usage_stats": {
+    "title": "Usage Statistics",
+    "subtitle": "Request and token usage from the proxy runtime.",
+    "refresh": "Refresh",
+    "last_updated": "Last updated",
+    "load_failed": "Failed to load usage statistics",
+    "total_requests": "Total Requests",
+    "total_tokens": "Total Tokens",
+    "success": "Success",
+    "failure": "Failed",
+    "requests_by_hour": "Requests by Hour",
+    "tokens_by_hour": "Tokens by Hour",
+    "top_models": "Top Models",
+    "api_breakdown": "API Breakdown",
+    "api": "API",
+    "model": "Model",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "failures": "Failures",
+    "models": "Models",
+    "no_data": "No usage data available"
   }
 }
