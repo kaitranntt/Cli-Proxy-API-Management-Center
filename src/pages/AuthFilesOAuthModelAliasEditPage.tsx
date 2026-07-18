@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Card } from '@/components/ui/Card';
@@ -9,6 +9,7 @@ import { ToggleSwitch } from '@/components/ui/ToggleSwitch';
 import { IconInfo, IconX } from '@/components/ui/icons';
 import { SecondaryScreenShell } from '@/components/common/SecondaryScreenShell';
 import { useEdgeSwipeBack } from '@/hooks/useEdgeSwipeBack';
+import { useUnsavedChangesGuard } from '@/hooks/useUnsavedChangesGuard';
 import { useAuthStore, useNotificationStore } from '@/stores';
 import { authFilesApi } from '@/services/api';
 import {
@@ -16,8 +17,12 @@ import {
   getTypeLabel,
   normalizeProviderKey,
 } from '@/features/authFiles/constants';
+import {
+  getModelAliasDraftSignature,
+  isOAuthEditorDirty,
+} from '@/features/authFiles/oauthEditorState';
 import type { AuthFileItem, OAuthModelAliasEntry } from '@/types';
-import { generateId } from '@/utils/helpers';
+import { generateId, getErrorMessage } from '@/utils/helpers';
 import styles from './AuthFilesOAuthModelAliasEditPage.module.scss';
 
 type AuthFileModelItem = { id: string; display_name?: string; type?: string; owned_by?: string };
@@ -44,6 +49,7 @@ const normalizeMappingEntries = (
     name: entry.name ?? '',
     alias: entry.alias ?? '',
     fork: Boolean(entry.fork),
+    forceMapping: entry.forceMapping,
   }));
 };
 
@@ -51,19 +57,23 @@ export function AuthFilesOAuthModelAliasEditPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { showNotification } = useNotificationStore();
+  const { showConfirmation, showNotification } = useNotificationStore();
   const connectionStatus = useAuthStore((state) => state.connectionStatus);
   const disableControls = connectionStatus !== 'connected';
 
   const [searchParams, setSearchParams] = useSearchParams();
   const providerFromParams = searchParams.get('provider') ?? '';
+  const [initialProviderKey] = useState(() => normalizeProviderKey(providerFromParams));
 
   const [provider, setProvider] = useState(providerFromParams);
   const [files, setFiles] = useState<AuthFileItem[]>([]);
   const [excluded, setExcluded] = useState<Record<string, string[]>>({});
   const [modelAlias, setModelAlias] = useState<Record<string, OAuthModelAliasEntry[]>>({});
   const [initialLoading, setInitialLoading] = useState(true);
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
+  const [baselineReady, setBaselineReady] = useState(false);
   const [modelAliasUnsupported, setModelAliasUnsupported] = useState(false);
+  const loadRequestRef = useRef(0);
 
   const [mappings, setMappings] = useState<OAuthModelMappingFormEntry[]>([
     buildEmptyMappingEntry(),
@@ -98,6 +108,31 @@ export function AuthFilesOAuthModelAliasEditPage() {
     if (!resolvedProviderKey) return false;
     return Object.prototype.hasOwnProperty.call(modelAlias, resolvedProviderKey);
   }, [modelAlias, resolvedProviderKey]);
+  const baselineMappingsSignature = useMemo(
+    () => getModelAliasDraftSignature(modelAlias[resolvedProviderKey] ?? []),
+    [modelAlias, resolvedProviderKey]
+  );
+  const mappingsSignature = useMemo(() => getModelAliasDraftSignature(mappings), [mappings]);
+  const contentDirty = baselineMappingsSignature !== mappingsSignature;
+  const isDirty = isOAuthEditorDirty(
+    initialProviderKey,
+    provider,
+    baselineMappingsSignature,
+    mappingsSignature
+  );
+  const unsavedChangesDialog = useMemo(
+    () => ({
+      title: t('common.unsaved_changes_title'),
+      message: t('common.unsaved_changes_message'),
+      confirmText: t('common.leave'),
+      cancelText: t('common.stay'),
+    }),
+    [t]
+  );
+  const { allowNextNavigation, allowNavigationTo } = useUnsavedChangesGuard({
+    shouldBlock: isDirty,
+    dialog: unsavedChangesDialog,
+  });
   const title = useMemo(() => t('oauth_model_alias.add_title'), [t]);
   const headerHint = useMemo(() => {
     if (!provider.trim()) {
@@ -133,61 +168,64 @@ export function AuthFilesOAuthModelAliasEditPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleBack]);
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadInitialData = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+    setInitialLoading(true);
+    setInitialLoadError(null);
+    setBaselineReady(false);
+    setModelAliasUnsupported(false);
 
-    const load = async () => {
-      setInitialLoading(true);
-      setModelAliasUnsupported(false);
-      try {
-        const [filesResult, excludedResult, aliasResult] = await Promise.allSettled([
-          authFilesApi.list(),
-          authFilesApi.getOauthExcludedModels(),
-          authFilesApi.getOauthModelAlias(),
-        ]);
+    try {
+      const [filesResult, excludedResult, aliasResult] = await Promise.allSettled([
+        authFilesApi.list(),
+        authFilesApi.getOauthExcludedModels(),
+        authFilesApi.getOauthModelAlias(),
+      ]);
 
-        if (cancelled) return;
+      if (requestId !== loadRequestRef.current) return;
 
-        if (filesResult.status === 'fulfilled') {
-          setFiles(filesResult.value?.files ?? []);
-        }
-
-        if (excludedResult.status === 'fulfilled') {
-          setExcluded(excludedResult.value ?? {});
-        }
-
-        if (aliasResult.status === 'fulfilled') {
-          setModelAlias(aliasResult.value ?? {});
-          return;
-        }
-
-        const err = aliasResult.status === 'rejected' ? aliasResult.reason : null;
-        const status =
-          typeof err === 'object' && err !== null && 'status' in err
-            ? (err as { status?: unknown }).status
-            : undefined;
-
-        if (status === 404) {
-          setModelAliasUnsupported(true);
-          return;
-        }
-      } finally {
-        if (!cancelled) {
-          setInitialLoading(false);
-        }
+      if (filesResult.status === 'fulfilled') {
+        setFiles(filesResult.value?.files ?? []);
       }
-    };
 
-    load().catch(() => {
-      if (!cancelled) {
+      if (excludedResult.status === 'fulfilled') {
+        setExcluded(excludedResult.value ?? {});
+      }
+
+      if (aliasResult.status === 'fulfilled') {
+        setModelAlias(aliasResult.value ?? {});
+        setBaselineReady(true);
+        return;
+      }
+
+      const err = aliasResult.reason;
+      const status =
+        typeof err === 'object' && err !== null && 'status' in err
+          ? (err as { status?: unknown }).status
+          : undefined;
+
+      if (status === 404) {
+        setModelAliasUnsupported(true);
+        return;
+      }
+      setInitialLoadError(getErrorMessage(err));
+    } catch (err: unknown) {
+      if (requestId === loadRequestRef.current) {
+        setInitialLoadError(getErrorMessage(err));
+      }
+    } finally {
+      if (requestId === loadRequestRef.current) {
         setInitialLoading(false);
       }
-    });
-
-    return () => {
-      cancelled = true;
-    };
+    }
   }, []);
+
+  useEffect(() => {
+    void loadInitialData();
+    return () => {
+      loadRequestRef.current += 1;
+    };
+  }, [loadInitialData]);
 
   useEffect(() => {
     if (!resolvedProviderKey) {
@@ -242,7 +280,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
     };
   }, [modelAliasUnsupported, resolvedProviderKey, showNotification, t]);
 
-  const updateProvider = useCallback(
+  const applyProviderChange = useCallback(
     (value: string) => {
       setProvider(value);
       const next = new URLSearchParams(searchParams);
@@ -252,9 +290,28 @@ export function AuthFilesOAuthModelAliasEditPage() {
       } else {
         next.delete('provider');
       }
+      const nextSearch = next.toString();
+      allowNavigationTo(
+        `${location.pathname}${nextSearch ? `?${nextSearch}` : ''}${location.hash}`
+      );
       setSearchParams(next, { replace: true });
     },
-    [searchParams, setSearchParams]
+    [allowNavigationTo, location.hash, location.pathname, searchParams, setSearchParams]
+  );
+
+  const updateProvider = useCallback(
+    (value: string) => {
+      if (!contentDirty || normalizeProviderKey(value) === resolvedProviderKey) {
+        applyProviderChange(value);
+        return;
+      }
+      showConfirmation({
+        ...unsavedChangesDialog,
+        variant: 'danger',
+        onConfirm: () => applyProviderChange(value),
+      });
+    },
+    [applyProviderChange, contentDirty, resolvedProviderKey, showConfirmation, unsavedChangesDialog]
   );
 
   const updateMappingEntry = useCallback(
@@ -297,7 +354,12 @@ export function AuthFilesOAuthModelAliasEditPage() {
           return null;
         }
         seenAlias.add(aliasKey);
-        return entry.fork ? { name, alias, fork: true } : { name, alias };
+        const normalizedEntry: OAuthModelAliasEntry = { name, alias };
+        if (entry.fork) normalizedEntry.fork = true;
+        if (typeof entry.forceMapping === 'boolean') {
+          normalizedEntry.forceMapping = entry.forceMapping;
+        }
+        return normalizedEntry;
       })
       .filter(Boolean) as OAuthModelAliasEntry[];
 
@@ -314,6 +376,7 @@ export function AuthFilesOAuthModelAliasEditPage() {
         await authFilesApi.deleteOauthModelAlias(channel);
       }
       showNotification(t('oauth_model_alias.save_success'), 'success');
+      allowNextNavigation();
       handleBack();
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : '';
@@ -321,9 +384,14 @@ export function AuthFilesOAuthModelAliasEditPage() {
     } finally {
       setSaving(false);
     }
-  }, [handleBack, isEditing, mappings, provider, showNotification, t]);
+  }, [allowNextNavigation, handleBack, isEditing, mappings, provider, showNotification, t]);
 
-  const canSave = !disableControls && !saving && !modelAliasUnsupported;
+  const canSave =
+    !disableControls &&
+    !saving &&
+    baselineReady &&
+    !modelAliasUnsupported &&
+    initialLoadError === null;
 
   return (
     <SecondaryScreenShell
@@ -346,6 +414,18 @@ export function AuthFilesOAuthModelAliasEditPage() {
           <EmptyState
             title={t('oauth_model_alias.upgrade_required_title')}
             description={t('oauth_model_alias.upgrade_required_desc')}
+          />
+        </Card>
+      ) : initialLoadError !== null ? (
+        <Card>
+          <EmptyState
+            title={t('notification.refresh_failed')}
+            description={initialLoadError || t('notification.refresh_failed')}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => void loadInitialData()}>
+                {t('common.refresh')}
+              </Button>
+            }
           />
         </Card>
       ) : (

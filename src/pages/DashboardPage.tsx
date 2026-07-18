@@ -13,6 +13,7 @@ import { authFilesApi } from '@/services/api';
 import { useApiKeysForModels } from '@/hooks/useApiKeysForModels';
 import { hasApiKeyFunConfig } from '@/features/providers/sponsor';
 import { formatDateValue } from '@/utils/format';
+import { getDashboardModelsStatValue } from '@/utils/dashboard';
 import styles from './DashboardPage.module.scss';
 
 interface QuickStat {
@@ -45,6 +46,7 @@ export function DashboardPage() {
 
   const models = useModelsStore((state) => state.models);
   const modelsLoading = useModelsStore((state) => state.loading);
+  const modelsError = useModelsStore((state) => state.error);
   const fetchModelsFromStore = useModelsStore((state) => state.fetchModels);
 
   const [authFilesCount, setAuthFilesCount] = useState<number | null>(null);
@@ -113,6 +115,7 @@ export function DashboardPage() {
     ? {
         gemini: config.geminiApiKeys?.length ?? 0,
         codex: config.codexApiKeys?.length ?? 0,
+        xai: config.xaiApiKeys?.length ?? 0,
         claude: config.claudeApiKeys?.length ?? 0,
         vertex: config.vertexApiKeys?.length ?? 0,
         openai: config.openaiCompatibility?.length ?? 0,
@@ -142,6 +145,7 @@ export function DashboardPage() {
         ? t('dashboard.provider_keys_detail', {
             gemini: providerStats.gemini,
             codex: providerStats.codex,
+            xai: providerStats.xai,
             claude: providerStats.claude,
             vertex: providerStats.vertex,
             openai: providerStats.openai,
@@ -158,7 +162,7 @@ export function DashboardPage() {
     },
     {
       label: t('dashboard.available_models'),
-      value: modelsLoading ? '-' : models.length,
+      value: getDashboardModelsStatValue(models.length, modelsLoading, modelsError),
       icon: <IconSatellite size={24} />,
       path: '/system',
       loading: modelsLoading,
