@@ -9,7 +9,7 @@
 `kaitranntt/Cli-Proxy-API-Management-Center` 是 **CLIProxyAPIPlus** 的仪表盘发布流。Fork 版本会发布 `management.html` 资源，供 CLIProxyAPIPlus 独立下载和打包。
 
 - 干净的上游更新会在包管理器门禁和构建通过后由 `Upstream Sync` workflow 合入。
-- 冲突或门禁失败会更新一个已指派的 `upstream-sync-blocked` 跟踪 issue。
+- 冲突、门禁失败或合并后同步分支/`main` 的推送失败会更新一个已指派的 `upstream-sync-blocked` 跟踪 issue。
 - Fork 自有仪表盘版本使用与上游兼容的 `vX.Y.Z-N` 标签后缀。
 
 **主项目**: https://github.com/router-for-me/CLIProxyAPI  
@@ -148,7 +148,9 @@ bun run build
 bun run dev        # 启动开发服务器
 bun run build      # tsc + Vite 构建
 bun run preview    # 本地预览 dist
+bun run test       # Bun 测试套件
 bun run lint       # ESLint（warnings 视为失败）
+bun run verify     # 测试 + lint + 构建
 bun run format     # Prettier
 bun run type-check # tsc --noEmit
 ```
@@ -159,7 +161,7 @@ bun run type-check # tsc --noEmit
 
 - 复现步骤（服务端版本 + UI 版本）
 - UI 改动截图
-- 验证记录（`bun run lint`、`bun run type-check`、`bun run build`）
+- 验证记录（`bun run verify`，以及按需单独运行的 `bun run type-check`）
 
 ## 许可证
 

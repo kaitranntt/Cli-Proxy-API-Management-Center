@@ -94,21 +94,24 @@ jobs:
             | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
             | sort -V \
             | tail -1 || true)
-          echo "local=${LOCAL}" >> "$GITHUB_OUTPUT"
-          echo "upstream_head=${UPSTREAM_HEAD}" >> "$GITHUB_OUTPUT"
-          echo "upstream_tag=${UPSTREAM_TAG}" >> "$GITHUB_OUTPUT"
-          echo "merge_base=${UPSTREAM_MERGE_BASE}" >> "$GITHUB_OUTPUT"
           if [ "${UPSTREAM_HEAD}" = "${UPSTREAM_MERGE_BASE}" ]; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            HAS_CHANGES=false
             echo "[i] Fork already contains all upstream commits; nothing to sync."
           else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            HAS_CHANGES=true
             if [ "${UPSTREAM_MERGE_BASE}" = "none" ]; then
               git log --oneline upstream/main | head -20
             else
               git log --oneline "${UPSTREAM_MERGE_BASE}..upstream/main" | head -20
             fi
           fi
+          {
+            echo "local=${LOCAL}"
+            echo "upstream_head=${UPSTREAM_HEAD}"
+            echo "upstream_tag=${UPSTREAM_TAG}"
+            echo "merge_base=${UPSTREAM_MERGE_BASE}"
+            echo "has_changes=${HAS_CHANGES}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Close stale tracking issue when fork is back in sync
         if: steps.check.outputs.has_changes == 'false'
@@ -135,7 +138,21 @@ jobs:
           BRANCH="upstream-sync/$(date -u +%Y%m%d-%H%M)"
           echo "name=${BRANCH}" >> "$GITHUB_OUTPUT"
           git checkout -b "${BRANCH}"
-          git push origin "${BRANCH}"
+          set +e
+          PUSH_LOG=$(mktemp)
+          git push origin "${BRANCH}" 2>&1 | tee "${PUSH_LOG}"
+          PUSH_EXIT=${PIPESTATUS[0]}
+          if [ "${PUSH_EXIT}" -ne 0 ]; then
+            echo "initial_push_passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "initial_push_passed=true" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo 'INITIAL_BRANCH_PUSH_TAIL<<EOF'
+            tail -n 60 "${PUSH_LOG}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+          exit 0
 
       - name: Merge upstream
         if: steps.check.outputs.has_changes == 'true'
@@ -211,8 +228,24 @@ jobs:
           set -e
 
       - name: Push sync branch
+        id: branch_push
         if: steps.check.outputs.has_changes == 'true' && steps.merge.outputs.passed == 'true'
-        run: git push origin "${{ steps.branch.outputs.name }}"
+        run: |
+          set +e
+          PUSH_LOG=$(mktemp)
+          git push origin "${{ steps.branch.outputs.name }}" 2>&1 | tee "${PUSH_LOG}"
+          PUSH_EXIT=${PIPESTATUS[0]}
+          if [ "${PUSH_EXIT}" -ne 0 ]; then
+            echo "passed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "passed=true" >> "$GITHUB_OUTPUT"
+          fi
+          {
+            echo 'BRANCH_PUSH_TAIL<<EOF'
+            tail -n 60 "${PUSH_LOG}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+          exit 0
 
       - name: Fast-forward main
         id: ffwd
@@ -220,13 +253,29 @@ jobs:
           steps.check.outputs.has_changes == 'true' &&
           steps.merge.outputs.passed == 'true' &&
           steps.gate.outputs.passed == 'true' &&
+          steps.branch_push.outputs.passed == 'true' &&
           env.FORCE_PR != 'true'
         run: |
           git checkout main
           git merge --ff-only "${{ steps.branch.outputs.name }}"
-          git push origin main
-          git push origin --delete "${{ steps.branch.outputs.name }}"
-          echo "did_ff=true" >> "$GITHUB_OUTPUT"
+          set +e
+          PUSH_LOG=$(mktemp)
+          git push origin main 2>&1 | tee "${PUSH_LOG}"
+          PUSH_EXIT=${PIPESTATUS[0]}
+          if [ "${PUSH_EXIT}" -ne 0 ]; then
+            echo "push_passed=false" >> "$GITHUB_OUTPUT"
+            echo "did_ff=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "push_passed=true" >> "$GITHUB_OUTPUT"
+            echo "did_ff=true" >> "$GITHUB_OUTPUT"
+            git push origin --delete "${{ steps.branch.outputs.name }}" || true
+          fi
+          {
+            echo 'MAIN_PUSH_TAIL<<EOF'
+            tail -n 60 "${PUSH_LOG}"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
+          exit 0
 
       - name: Close stale tracking issue after fast-forward
         if: steps.ffwd.outputs.did_ff == 'true'
@@ -250,6 +299,7 @@ jobs:
         if: |
           steps.check.outputs.has_changes == 'true' &&
           steps.merge.outputs.passed == 'true' &&
+          steps.branch_push.outputs.passed == 'true' &&
           env.FORCE_PR == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -260,7 +310,7 @@ jobs:
             --repo "${{ github.repository }}" 2>/dev/null || true
 
           TITLE="chore(upstream-sync): pull dashboard upstream"
-          BODY=$(printf "## Upstream sync\n\n- Upstream HEAD: \`${{ steps.check.outputs.upstream_head }}\`\n- Upstream tag: \`${{ steps.check.outputs.upstream_tag }}\`\n\nValidation: npm ci, lint, build.\n")
+          BODY=$(printf "## Upstream sync\n\n- Upstream HEAD: \`${{ steps.check.outputs.upstream_head }}\`\n- Upstream tag: \`${{ steps.check.outputs.upstream_tag }}\`\n\nValidation: Bun frozen install, lint, build.\n")
           PR_URL=$(gh pr create \
             --base main \
             --head "${{ steps.branch.outputs.name }}" \
@@ -272,11 +322,19 @@ jobs:
             gh pr edit "${PR_NUM}" --add-label "${PR_LABEL}" 2>/dev/null || true
           fi
 
-      - name: Update tracking issue on conflict or gate failure
+      - name: Update tracking issue on conflict, gate, or push failure
         if: |
+          !cancelled() &&
           steps.check.outputs.has_changes == 'true' &&
-          env.FORCE_PR != 'true' &&
-          (steps.merge.outputs.passed != 'true' || steps.gate.outputs.passed == 'false')
+          (
+            steps.merge.outputs.passed != 'true' ||
+            steps.branch_push.outputs.passed == 'false' ||
+            steps.ffwd.outputs.push_passed == 'false' ||
+            (
+              env.FORCE_PR != 'true' &&
+              steps.gate.outputs.passed == 'false'
+            )
+          )
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -288,7 +346,10 @@ jobs:
 
           STATUS=""
           [ "${{ steps.merge.outputs.passed }}" != "true" ] && STATUS="${STATUS}- :warning: merge conflict or merge failure\n"
-          [ "${{ steps.gate.outputs.passed }}" = "false" ] && STATUS="${STATUS}- :x: npm install/lint/build gate failed\n"
+          [ "${{ steps.gate.outputs.passed }}" = "false" ] && STATUS="${STATUS}- :x: Bun install/lint/build gate failed\n"
+          [ "${{ steps.branch.outputs.initial_push_passed }}" = "false" ] && STATUS="${STATUS}- :x: initial sync branch push failed\n"
+          [ "${{ steps.branch_push.outputs.passed }}" = "false" ] && STATUS="${STATUS}- :x: merged sync branch push failed\n"
+          [ "${{ steps.ffwd.outputs.push_passed }}" = "false" ] && STATUS="${STATUS}- :x: main push failed; remote main was not advanced\n"
 
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           BODY=$(cat <<EOF
@@ -324,6 +385,30 @@ jobs:
 
           \`\`\`
           ${GATE_TAIL:-<no gate log captured>}
+          \`\`\`
+
+          </details>
+
+          <details><summary>Initial branch push tail</summary>
+
+          \`\`\`
+          ${INITIAL_BRANCH_PUSH_TAIL:-<not attempted or no output captured>}
+          \`\`\`
+
+          </details>
+
+          <details><summary>Merged branch push tail</summary>
+
+          \`\`\`
+          ${BRANCH_PUSH_TAIL:-<not attempted or no output captured>}
+          \`\`\`
+
+          </details>
+
+          <details><summary>Main push tail</summary>
+
+          \`\`\`
+          ${MAIN_PUSH_TAIL:-<not attempted or no output captured>}
           \`\`\`
 
           </details>

@@ -9,7 +9,7 @@ A single-file Web UI (React + TypeScript) for operating and troubleshooting the 
 `kaitranntt/Cli-Proxy-API-Management-Center` is maintained as the dashboard release stream for **CLIProxyAPIPlus**. Fork releases publish `management.html` assets that CLIProxyAPIPlus can download and bundle independently from the upstream dashboard.
 
 - Clean upstream updates are merged by the `Upstream Sync` workflow after the package-manager gate and build pass.
-- Conflicts or failed gates update a single assigned `upstream-sync-blocked` issue.
+- Conflicts, failed gates, or push failures for the merged sync branch or `main` update a single assigned `upstream-sync-blocked` issue.
 - Fork-only release tags use the upstream-compatible `vX.Y.Z-N` suffix pattern when an extra dashboard asset is needed.
 
 **Main Project**: https://github.com/router-for-me/CLIProxyAPI  
@@ -148,7 +148,9 @@ The UI language is automatically detected from browser settings and can be manua
 bun run dev        # Vite dev server
 bun run build      # tsc + Vite build
 bun run preview    # serve dist locally
+bun run test       # Bun test suite
 bun run lint       # ESLint (fails on warnings)
+bun run verify     # test + lint + build
 bun run format     # Prettier
 bun run type-check # tsc --noEmit
 ```
@@ -159,7 +161,7 @@ Issues and PRs are welcome. Please include:
 
 - Reproduction steps (server version + UI version)
 - Screenshots for UI changes
-- Verification notes (`bun run lint`, `bun run type-check`, `bun run build`)
+- Verification notes (`bun run verify`, plus `bun run type-check` when run separately)
 
 ## License
 
