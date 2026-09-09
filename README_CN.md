@@ -13,10 +13,17 @@
 - Fork 自有仪表盘版本使用与上游兼容的 `vX.Y.Z-N` 标签后缀。
 
 **主项目**: https://github.com/router-for-me/CLIProxyAPI  
-**示例地址**: https://remote.router-for.me/  
-**最低版本要求**: ≥ 7.1.0（推荐最新）
+**最低版本要求**: ≥ 7.2.147（推荐最新）
 
 从6.0.19版本开始，Web UI 随主程序一起提供；服务运行后，通过 API 端口上的"/management.html"访问它。
+
+## 赞助商
+
+[![https://go.apimart.ai/gh-cli-proxy-api-management-center](./assets/apimart-zh.png)](https://go.apimart.ai/gh-cli-proxy-api-management-center)
+
+感谢 APIMart 赞助了本项目！
+
+APIMart 是专注 AI 图片/视频生成的低价 API 平台，GPT-Image-2 低至 $0.006/张，1 美元可出图 160+ 张。图片、视频一套异步 API 通吃，提交任务拿 ID、回调取结果，跑批万张不超时、换模型不改代码。按量付费、无月费，通过[此注册链接](https://go.apimart.ai/gh-cli-proxy-api-management-center)注册即可开用。
 
 ## 这是什么（以及不是什么）
 

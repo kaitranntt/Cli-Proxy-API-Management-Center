@@ -554,6 +554,8 @@
     "result_file": "儲存檔案"
   },
   "oauth_excluded": {
+    "editor_description": "為供應商設定不對外顯示的模型，支援精確選取和萬用字元規則。",
+    "models_hint": "展開清單選取模型，或在下方輸入萬用字元規則。",
     "title": "OAuth 模型停用",
     "description": "按供應商分列展示，點擊卡片編輯或刪除；支援 * 萬用字元，範圍跟隨上方的設定檔篩選標籤。",
     "add": "新增停用",
@@ -611,6 +613,11 @@
     "rules_reserved": "「*」會停用整個 provider，請改用「已停用」開關"
   },
   "oauth_model_alias": {
+    "editor_description": "為供應商的模型設定呼叫別名，統一用戶端使用的模型名稱。",
+    "edit_title": "編輯 {{provider}} 的模型別名",
+    "mapping_hint": "選取原模型，並填寫用戶端使用的別名。",
+    "mapping_row": "別名對應 {{number}}",
+    "remove_mapping": "刪除第 {{number}} 條別名對應",
     "title": "OAuth 模型別名",
     "add": "新增別名",
     "add_title": "新增供應商模型別名",
@@ -957,7 +964,8 @@
           "title": "進階與實驗",
           "description": "請求標頭偽裝、簽章快取、外掛來源等不常修改的設定",
           "plugins_title": "外掛",
-          "signature_title": "Antigravity 簽章"
+          "antigravity_title": "Antigravity",
+          "signature_title": "簽章驗證"
         },
         "server": {
           "host": "主機位址",
@@ -1032,6 +1040,11 @@
           "usage_statistics_enabled_desc": "啟用記憶體中的請求用量聚合",
           "redis_usage_retention": "Redis 用量佇列保留秒數",
           "redis_usage_retention_hint": "RESP 介面 LPOP/RPOP 用量佇列的記憶體保留時間，最大 3600 秒",
+          "antigravity_sensitive_words": "敏感詞混淆",
+          "antigravity_sensitive_words_desc": "在 Antigravity 系統提示詞的匹配項中插入零寬字元，降低上游精確關鍵詞匹配",
+          "antigravity_sensitive_words_label": "敏感詞（antigravity.sensitive-words）",
+          "antigravity_sensitive_words_placeholder": "proxy",
+          "antigravity_sensitive_words_hint": "每項填寫一個詞或短語；匹配不分大小寫，儲存時移除空項，少於 2 個字元的項目會被後端忽略",
           "antigravity_signature_cache": "啟用 Antigravity 簽名快取",
           "antigravity_signature_cache_desc": "優先使用並校驗快取的 thinking block 簽名",
           "antigravity_signature_strict": "嚴格校驗旁路簽名",
@@ -1514,7 +1527,7 @@
     },
     "categories": {
       "title": "提供商",
-      "quickFill": "快速填入",
+      "quickFill": "快速接入",
       "activeCount": "{{active}}/{{total}} 活躍"
     },
     "providerNames": {
@@ -1548,6 +1561,7 @@
       },
       "websocketsTag": "WebSockets",
       "cloakTag": "Cloak",
+      "cliProfileTag": "CLI 指紋",
       "empty": "尚未新增設定,點擊右上角新增。",
       "filterPlaceholder": "搜尋金鑰、位址、前綴…",
       "description": "在 {{route}} 下管理資源"
@@ -1557,6 +1571,7 @@
       "detailHint": "{{provider}} 會按協議分別寫入對應的 API Key 設定,此處只做聚合管理。",
       "registerLink": "點此註冊",
       "registerNow": "立即註冊",
+      "kimiPromo": "新用戶首次成功儲值，贈送儲值金額 10% 的 API 額度，最高贈送 ¥1000，優惠截至 9 月 30 日",
       "dashboardLink": "控制面板",
       "emptyRegisterHint": "尚未新增設定",
       "apiKeyHint": "此金鑰只會寫入目前選擇的分組/協議設定。",
@@ -1706,8 +1721,10 @@
       },
       "cloakCacheUserId": "快取 user_id",
       "cloakCacheUserIdHint": "按 API key 複用 Claude cloak 產生的 user_id",
-      "experimentalCchSigning": "實驗性 CCH 簽名",
-      "experimentalCchSigningHint": "對 cloaked Claude /v1/messages 最終請求體啟用 CCH 簽名",
+      "fingerprintProfile": "請求指紋",
+      "fingerprintProfileDefault": "預設（由呼叫端控制）",
+      "fingerprintProfileClaudeCodeCli": "Claude Code CLI",
+      "fingerprintProfileHint": "預設保留呼叫端傳入的提示詞與請求標頭；也可選擇使用 Claude Code CLI 請求指紋。",
       "validation": {
         "nameRequired": "名稱必填",
         "apiKeyRequired": "至少填寫一個 API 金鑰",
