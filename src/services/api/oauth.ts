@@ -13,19 +13,30 @@ export type BuiltInOAuthProvider =
   | 'anthropic'
   | 'antigravity'
   | 'kimi'
+  | 'kimi-ai'
   | 'qoder'
-  | 'xai';
+  | 'xai'
+  | 'devin'
+  | 'meta';
 
 export interface OAuthStartResponse {
   url: string;
   state?: string;
+  user_code?: string;
+  flow?: string;
+  expires_in?: number;
 }
 
 export interface OAuthCallbackResponse {
   status: 'ok';
 }
 
-const WEBUI_SUPPORTED = new Set<string>(['codex', 'anthropic', 'antigravity', 'qoder', 'xai']);
+export interface OAuthCancelResponse {
+  status: 'ok';
+  cancelled: boolean;
+}
+
+const WEBUI_SUPPORTED = new Set<string>(['codex', 'anthropic', 'antigravity', 'devin', 'qoder', 'xai']);
 
 const normalizeProviderForManagementPath = (provider: string): string => {
   const key = normalizeManagementOAuthProviderKey(provider);
@@ -36,7 +47,7 @@ const normalizeProviderForManagementPath = (provider: string): string => {
 };
 
 export const oauthApi = {
-  startAuth: (provider: string) => {
+  startAuth: (provider: string, signal?: AbortSignal) => {
     const providerKey = normalizeProviderForManagementPath(provider);
     const params: Record<string, string | boolean> = {};
     if (WEBUI_SUPPORTED.has(providerKey)) {
@@ -44,19 +55,28 @@ export const oauthApi = {
     }
     return apiClient.get<OAuthStartResponse>(`/${providerKey}-auth-url`, {
       params: Object.keys(params).length ? params : undefined,
+      ...(signal ? { signal } : {}),
     });
   },
 
-  getAuthStatus: (state: string) =>
+  getAuthStatus: (state: string, signal?: AbortSignal) =>
     apiClient.get<{ status: 'ok' | 'wait' | 'error'; error?: string }>(`/get-auth-status`, {
       params: { state },
+      ...(signal ? { signal } : {}),
     }),
 
-  submitCallback: (provider: string, redirectUrl: string) => {
+  cancelSession: (state: string, signal?: AbortSignal) =>
+    apiClient.delete<OAuthCancelResponse>('/oauth-session', {
+      params: { state },
+      ...(signal ? { signal } : {}),
+    }),
+
+  submitCallback: (provider: string, redirectUrl: string, signal?: AbortSignal) => {
     const providerKey = normalizeProviderForManagementPath(provider);
-    return apiClient.post<OAuthCallbackResponse>('/oauth-callback', {
-      provider: providerKey,
-      redirect_url: redirectUrl,
-    });
+    return apiClient.post<OAuthCallbackResponse>(
+      '/oauth-callback',
+      { provider: providerKey, redirect_url: redirectUrl },
+      signal ? { signal } : undefined
+    );
   },
 };
