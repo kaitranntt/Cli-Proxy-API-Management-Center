@@ -14,6 +14,7 @@ import {
   resolveLegacyAuthApiBase,
 } from '@/services/storage/secureStorage';
 import { apiClient } from '@/services/api/client';
+import { LegacyBackendError, probeLegacyBackend } from '@/services/api/legacyBackendProbe';
 import { useConfigStore } from './useConfigStore';
 import { useModelsStore } from './useModelsStore';
 import { useQuotaStore } from './useQuotaStore';
@@ -125,6 +126,7 @@ export const useAuthStore = create<AuthStoreState>()(
             serverBuildDate: null,
             supportsPlugin: false,
           });
+          useConfigStore.getState().clearCache();
           useModelsStore.getState().clearCache();
           useQuotaStore.getState().clearQuotaCache();
 
@@ -134,8 +136,21 @@ export const useAuthStore = create<AuthStoreState>()(
             managementKey,
           });
 
-          // 测试连接 - 获取配置
-          await useConfigStore.getState().fetchConfig(true);
+          // 测试连接 - 获取配置。只在 v8 路由不存在时诊断旧版后端。
+          const revision = apiClient.getConnectionRevision();
+          try {
+            await useConfigStore.getState().fetchConfig(true);
+          } catch (error) {
+            if (
+              (error as { status?: number })?.status === 404 &&
+              revision === apiClient.getConnectionRevision() &&
+              (await probeLegacyBackend(apiBase, managementKey)) &&
+              revision === apiClient.getConnectionRevision()
+            ) {
+              throw new LegacyBackendError();
+            }
+            throw error;
+          }
 
           // 登录成功
           set({
@@ -159,6 +174,7 @@ export const useAuthStore = create<AuthStoreState>()(
       // 登出
       logout: () => {
         restoreSessionPromise = null;
+        apiClient.setConfig({ apiBase: '', managementKey: '' });
         useConfigStore.getState().clearCache();
         useModelsStore.getState().clearCache();
         useQuotaStore.getState().clearQuotaCache();

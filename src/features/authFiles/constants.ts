@@ -29,8 +29,16 @@ export type AuthFileModelItem = {
 export type AuthFileIconAsset = string | { light: string; dark: string };
 
 export type QuotaProviderType =
-  'antigravity' | 'claude' | 'codex' | 'devin' | 'kimi' | 'qoder' | 'xai' | 'meta';
-export type AuthFileQuotaFilter = QuotaProviderType | 'all' | null;
+  | 'antigravity'
+  | 'claude'
+  | 'codex'
+  | 'devin'
+  | 'kimi'
+  | 'meta'
+  | 'plugin'
+  | 'qoder'
+  | 'xai';
+export type AuthFileQuotaFilter = string | null;
 export type OAuthConfigLoadError = 'loading' | 'unsupported' | 'load' | null;
 
 export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
@@ -40,6 +48,7 @@ export const QUOTA_PROVIDER_TYPES = new Set<QuotaProviderType>([
   'codex',
   'devin',
   'kimi',
+  'plugin',
   'qoder',
   'xai',
 ]);
@@ -230,6 +239,12 @@ export const applyAuthFileWebsockets = (
   next.websockets = websockets;
   return next;
 };
+
+export const supportsAuthFileSiwc = (providerKey: string): boolean =>
+  normalizeProviderKey(providerKey) === 'codex';
+
+export const readAuthFileUseSiwc = (value: Record<string, unknown>): boolean =>
+  parseDisableCoolingValue(value.use_siwc) ?? false;
 
 export const supportsAuthFileUsingApi = (providerKey: string): boolean =>
   AUTH_FILE_USING_API_PROVIDERS.has(normalizeProviderKey(providerKey));
