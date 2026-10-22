@@ -49,6 +49,7 @@ export const BUILT_IN_QUOTA_PROVIDERS: ReadonlySet<string> = new Set([
   'devin',
   'kimi',
   'meta',
+  'qoder',
   'xai',
 ]);
 

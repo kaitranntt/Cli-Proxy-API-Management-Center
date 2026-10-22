@@ -107,7 +107,8 @@
     "plugin_store": "Cửa hàng Plugin",
     "config_management": "Bảng cấu hình",
     "logs": "Trình xem Log",
-    "system_info": "Thông tin Trung tâm Quản lý"
+    "system_info": "Thông tin Trung tâm Quản lý",
+    "usage_statistics": "Usage Statistics"
   },
   "nav_groups": {
     "operate": "Vận hành",
@@ -127,7 +128,8 @@
     "plugin_store": "Khám phá & cài đặt plugin",
     "logs": "Truy vết yêu cầu",
     "config_management": "Cấu hình gateway",
-    "system_info": "Runtime & chẩn đoán"
+    "system_info": "Runtime & chẩn đoán",
+    "usage_statistics": "Request and token usage"
   },
   "dashboard": {
     "hero_verdict_good": "Mọi hệ thống ổn định",
@@ -435,7 +437,8 @@
     "policy_rules_hint": "Các quy tắc tùy chỉnh được ưu tiên theo thứ tự danh sách. Kế thừa hoặc danh sách trống sẽ sử dụng quy tắc kế thừa; điều này không vô hiệu hóa chúng. Mẫu biểu thức chính quy (Regex) dùng cú pháp của Go.",
     "policy_retry_invalid": "Nhập một số nguyên an toàn không âm, hoặc chọn Kế thừa.",
     "policy_aliases_invalid": "Nhập tên model và bí danh không để trống cho mỗi hàng mới hoặc đã chỉnh sửa.",
-    "policy_rules_invalid": "Hoàn thành mỗi quy tắc đã chỉnh sửa với mã trạng thái dương, một hành động và ít nhất một điều kiện khớp không để trống."
+    "policy_rules_invalid": "Hoàn thành mỗi quy tắc đã chỉnh sửa với mã trạng thái dương, một hành động và ít nhất một điều kiện khớp không để trống.",
+    "filter_qoder": "Qoder"
   },
   "antigravity_subscription": {
     "plan_unknown": "Không rõ",
@@ -924,7 +927,17 @@
     "kimi_ai_oauth_status_success": "Xác thực thành công!",
     "kimi_ai_oauth_status_error": "Xác thực thất bại:",
     "kimi_ai_oauth_start_error": "Không thể bắt đầu đăng nhập Kimi quốc tế:",
-    "kimi_ai_oauth_polling_error": "Không thể kiểm tra trạng thái xác thực:"
+    "kimi_ai_oauth_polling_error": "Không thể kiểm tra trạng thái xác thực:",
+    "qoder_oauth_title": "Qoder OAuth",
+    "qoder_oauth_button": "Start Qoder Login",
+    "qoder_oauth_hint": "Login to Qoder through the device authorization flow, then save the generated credential automatically.",
+    "qoder_oauth_url_label": "Authorization URL:",
+    "qoder_open_link": "Open Link",
+    "qoder_copy_link": "Copy Link",
+    "qoder_oauth_status_waiting": "Waiting for authentication...",
+    "qoder_oauth_status_success": "Authentication successful!",
+    "qoder_oauth_status_error": "Authentication failed:",
+    "qoder_oauth_start_error": "Failed to start Qoder OAuth:"
   },
   "stats": {
     "success": "Thành công",
@@ -1202,7 +1215,9 @@
           "timeout": "Timeout",
           "stabilize_device": "Ổn định hồ sơ thiết bị",
           "stabilize_device_desc": "Cố định OS/Kiến trúc và ổn định vân tay phần mềm theo từng credential/API key",
-          "beta_features": "Tính năng Beta"
+          "beta_features": "Tính năng Beta",
+          "codex_identity_confuse": "Codex Identity Confuse",
+          "codex_identity_confuse_desc": "When fill-first routing or session affinity is used, remap Codex prompt_cache_key and installation identity for the selected auth"
         },
         "network": {
           "title": "Cấu hình mạng",
@@ -2316,5 +2331,44 @@
     "error": "Liên kết thất bại. Hãy bắt đầu lại.",
     "unsupported": "Máy chủ này không hỗ trợ liên kết SIWC.",
     "expired": "Phiên liên kết đã hết hạn. Hãy bắt đầu lại."
+  },
+  "qoder_quota": {
+    "title": "Qoder Quota",
+    "empty_title": "No Qoder Auth Files",
+    "empty_desc": "Login with Qoder to view remaining quota.",
+    "idle": "Click here to refresh quota",
+    "loading": "Loading quota...",
+    "load_failed": "Failed to load quota: {{message}}",
+    "empty_data": "No Qoder quota snapshot available. Refresh auth files after Qoder models sync.",
+    "refresh_button": "Refresh Quota",
+    "fetch_all": "Fetch All",
+    "usage_label": "Usage",
+    "remaining_amount": "Remaining {{amount}}",
+    "expires_at": "Expires {{time}}",
+    "org_resource_remaining": "Org resource remaining",
+    "quota_exceeded": "Quota exceeded",
+    "unit_default": "credits"
+  },
+  "usage_stats": {
+    "title": "Usage Statistics",
+    "subtitle": "Request and token usage from the proxy runtime.",
+    "refresh": "Refresh",
+    "last_updated": "Last updated",
+    "load_failed": "Failed to load usage statistics",
+    "total_requests": "Total Requests",
+    "total_tokens": "Total Tokens",
+    "success": "Success",
+    "failure": "Failed",
+    "requests_by_hour": "Requests by Hour",
+    "tokens_by_hour": "Tokens by Hour",
+    "top_models": "Top Models",
+    "api_breakdown": "API Breakdown",
+    "api": "API",
+    "model": "Model",
+    "requests": "Requests",
+    "tokens": "Tokens",
+    "failures": "Failures",
+    "models": "Models",
+    "no_data": "No usage data available"
   }
 }

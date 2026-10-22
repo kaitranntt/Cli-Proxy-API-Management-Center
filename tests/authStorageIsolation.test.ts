@@ -89,7 +89,7 @@ describe('auth storage isolation', () => {
   test('migrates legacy credentials only when the normalized panel identity is exact', () => {
     obfuscatedStorage.setItem(
       STORAGE_KEY_AUTH,
-      JSON.parse(envelope('https://example.test/proxy/v0/management/', 'legacy-key'))
+      JSON.parse(envelope('https://example.test/proxy/v8/management/', 'legacy-key'))
     );
     localStorage.setItem('isLoggedIn', 'true');
     const storage = createScopedAuthStorage(() => 'https://example.test/proxy');
