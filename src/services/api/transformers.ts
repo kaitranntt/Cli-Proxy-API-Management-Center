@@ -1,3 +1,4 @@
+import type { ProviderFamily } from './providers';
 import type {
   ApiKeyEntry,
   CloakConfig,
@@ -7,10 +8,12 @@ import type {
   ProviderKeyConfig,
 } from '@/types';
 import type { Config } from '@/types/config';
-import type { ProviderRuntimePolicy, RequestScopedErrorRule } from '@/types/provider';
+import type { ProviderRuntimePolicy } from '@/types/provider';
 import { buildHeaderObject } from '@/utils/headers';
 import { isRecord } from '@/utils/helpers';
 import { readCredentialWeight } from '@/utils/credentialWeight';
+import { normalizeConnectionPool } from './connectionPool';
+import { normalizeErrorRule } from './errorRules';
 import { normalizeModelOptions, normalizeModelThinking } from './providerModels';
 
 const normalizeBoolean = (value: unknown): boolean | undefined =>
@@ -123,31 +126,30 @@ const normalizeRuntimePolicy = (record: Record<string, unknown> | null): Provide
   if (typeof retry === 'number' && Number.isSafeInteger(retry)) policy.requestRetry = retry;
   const rules = record?.['request-scoped-errors'];
   if (Array.isArray(rules)) {
-    policy.requestScopedErrors = rules.filter(isRecord).map((rule) => ({
-      ...(typeof rule.status === 'number' ? { status: rule.status } : {}),
-      ...(Array.isArray(rule.match)
-        ? { match: rule.match.filter((v): v is string => typeof v === 'string') }
-        : {}),
-      ...(Array.isArray(rule['match-regexr'])
-        ? { matchRegex: rule['match-regexr'].filter((v): v is string => typeof v === 'string') }
-        : {}),
-      ...(typeof rule.action === 'string'
-        ? { action: rule.action as RequestScopedErrorRule['action'] }
-        : {}),
-    }));
+    policy.requestScopedErrors = rules.filter(isRecord).map(normalizeErrorRule);
   }
   return policy;
 };
 
-const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => {
+const normalizeProviderKeyConfig = (
+  item: unknown,
+  allowKeyless = false
+): ProviderKeyConfig | null => {
   if (item === undefined || item === null) return null;
   const record = isRecord(item) ? item : null;
   const apiKey = record?.['api-key'] ?? (typeof item === 'string' ? item : '');
   const trimmed = String(apiKey || '').trim();
-  if (!trimmed) return null;
+  if (!trimmed && !allowKeyless) return null;
 
   const config: ProviderKeyConfig = { apiKey: trimmed, ...normalizeRuntimePolicy(record) };
+  const pool = normalizeConnectionPool(record?.['connection-pool']);
+  if (pool) config.connectionPool = pool;
+  const location = record?.['openapi-location'];
+  if (typeof location === 'string') config.openapiLocation = location.trim();
   for (const [key, wire] of [
+    ['interactions', 'interactions'],
+    ['openapi', 'openapi'],
+    ['nativeToolSearch', 'native-tool-search'],
     ['alphaSearch', 'alpha-search'],
     ['disableCodexCloaking', 'disable-codex-cloaking'],
     ['rebuildMidSystemMessage', 'rebuild-mid-system-message'],
@@ -198,6 +200,23 @@ const normalizeProviderKeyConfig = (item: unknown): ProviderKeyConfig | null => 
     if (sensitiveWords.length) {
       cloak.sensitiveWords = sensitiveWords;
     }
+    const wordsReplace = cloakRaw['sensitive-words-replace'];
+    if (isRecord(wordsReplace)) {
+      cloak.sensitiveWordsReplace = Object.fromEntries(
+        Object.entries(wordsReplace).filter(
+          (entry): entry is [string, string] => typeof entry[1] === 'string'
+        )
+      );
+    }
+    const patternsReplace = cloakRaw['sensitive-patterns-replace'];
+    if (Array.isArray(patternsReplace)) {
+      // Go RE2 syntax belongs to the backend; preserve order and all string contents.
+      cloak.sensitivePatternsReplace = patternsReplace.flatMap((rule) =>
+        isRecord(rule) && typeof rule.pattern === 'string' && typeof rule.replacement === 'string'
+          ? [{ pattern: rule.pattern, replacement: rule.replacement }]
+          : []
+      );
+    }
     const cacheUserId = normalizeBoolean(cloakRaw['cache-user-id']);
     if (cacheUserId !== undefined) {
       cloak.cacheUserId = cacheUserId;
@@ -225,6 +244,8 @@ const normalizeGeminiKeyConfig = (item: unknown): GeminiKeyConfig | null => {
   if (!trimmed) return null;
 
   const config: GeminiKeyConfig = { apiKey: trimmed, ...normalizeRuntimePolicy(record) };
+  const pool = normalizeConnectionPool(record?.['connection-pool']);
+  if (pool) config.connectionPool = pool;
   const weight = readCredentialWeight(record?.weight);
   if (weight !== undefined) config.weight = weight;
   const priority = record?.priority;
@@ -313,12 +334,21 @@ const normalizeOauthExcluded = (payload: unknown): Record<string, string[]> | un
   return map;
 };
 
+// The backend synthesizes a native auth for each actual member, even without an API key,
+// when these families route to a configured endpoint. An empty keys list has no members.
+export const supportsEndpointOnlyKey = (family?: ProviderFamily) =>
+  family === 'gemini' ||
+  family === 'interactions' ||
+  family === 'codex' ||
+  family === 'claude' ||
+  family === 'xai';
+
 /** Resolve effective values for display only; retain the complete persisted group for writes. */
-export const normalizeProviderGroups = (groups: unknown, openai = false) => {
+export const normalizeProviderGroups = (groups: unknown, family?: ProviderFamily) => {
   if (!Array.isArray(groups)) return [];
   return groups.flatMap<ProviderKeyConfig | OpenAIProviderConfig>((group, groupIndex) => {
     if (!isRecord(group) || !Array.isArray(group.keys)) return [];
-    if (openai) {
+    if (family === 'openai-compatibility') {
       const config = normalizeOpenAIProvider(group, groupIndex);
       return config ? [{ ...config, source: { groupIndex, group, groups } }] : [];
     }
@@ -330,7 +360,14 @@ export const normalizeProviderGroups = (groups: unknown, openai = false) => {
       Object.entries(key).forEach(([field, value]) => {
         if (value !== null) effective[field] = value;
       });
-      const config = normalizeProviderKeyConfig(effective);
+      // Pool settings are edited as sparse overrides, never as a flattened group copy.
+      effective['connection-pool'] = key['connection-pool'];
+      const config = normalizeProviderKeyConfig(
+        effective,
+        supportsEndpointOnlyKey(family) &&
+          typeof group['base-url'] === 'string' &&
+          !!group['base-url'].trim()
+      );
       return config ? [{ ...config, source: { groupIndex, keyIndex, group, groups } }] : [];
     });
   });
@@ -343,6 +380,8 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
     path
       .split('.')
       .reduce<unknown>((value, key) => (isRecord(value) ? value[key] : undefined), raw);
+  const serverId = at('server.server-id');
+  if (typeof serverId === 'string' && serverId.trim()) config.serverId = serverId.trim();
   config.debug = normalizeBoolean(at('observability.logs.debug'));
   config.requestLog = normalizeBoolean(at('observability.logs.request-log'));
   config.loggingToFile = normalizeBoolean(at('observability.logs.logging-to-file'));
@@ -365,18 +404,31 @@ export const normalizeConfigResponse = (raw: unknown): Config => {
       normalizeBoolean(at('oauth.providers.antigravity.antigravity-credits')) ?? false,
   };
   config.providerGroups = isRecord(raw['api-keys']) ? raw['api-keys'] : {};
-  config.geminiApiKeys = normalizeProviderGroups(at('api-keys.gemini')) as ProviderKeyConfig[];
-  config.interactionsApiKeys = normalizeProviderGroups(
-    at('api-keys.interactions')
+  config.geminiApiKeys = normalizeProviderGroups(
+    at('api-keys.gemini'),
+    'gemini'
   ) as ProviderKeyConfig[];
-  config.codexApiKeys = normalizeProviderGroups(at('api-keys.codex')) as ProviderKeyConfig[];
-  config.metaApiKeys = normalizeProviderGroups(at('api-keys.meta')) as ProviderKeyConfig[];
-  config.xaiApiKeys = normalizeProviderGroups(at('api-keys.xai')) as ProviderKeyConfig[];
-  config.claudeApiKeys = normalizeProviderGroups(at('api-keys.claude')) as ProviderKeyConfig[];
-  config.vertexApiKeys = normalizeProviderGroups(at('api-keys.vertex')) as ProviderKeyConfig[];
+  config.interactionsApiKeys = normalizeProviderGroups(
+    at('api-keys.interactions'),
+    'interactions'
+  ) as ProviderKeyConfig[];
+  config.codexApiKeys = normalizeProviderGroups(
+    at('api-keys.codex'),
+    'codex'
+  ) as ProviderKeyConfig[];
+  config.metaApiKeys = normalizeProviderGroups(at('api-keys.meta'), 'meta') as ProviderKeyConfig[];
+  config.xaiApiKeys = normalizeProviderGroups(at('api-keys.xai'), 'xai') as ProviderKeyConfig[];
+  config.claudeApiKeys = normalizeProviderGroups(
+    at('api-keys.claude'),
+    'claude'
+  ) as ProviderKeyConfig[];
+  config.vertexApiKeys = normalizeProviderGroups(
+    at('api-keys.vertex'),
+    'vertex'
+  ) as ProviderKeyConfig[];
   config.openaiCompatibility = normalizeProviderGroups(
     at('api-keys.openai-compatibility'),
-    true
+    'openai-compatibility'
   ) as OpenAIProviderConfig[];
   config.oauthExcludedModels = normalizeOauthExcluded(at('oauth.excluded-models'));
   return config;

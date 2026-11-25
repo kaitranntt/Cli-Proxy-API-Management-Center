@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Collapsible } from '@/components/ui/Collapsible';
+import { sponsorConflictMessage } from '../../sponsorBundle';
 import { Select } from '@/components/ui/Select';
 import {
   IconAlertTriangle,
@@ -41,17 +41,22 @@ import type {
 } from '../../types';
 import { ModelDiscoveryPanel } from './ModelDiscoveryPanel';
 import { ModelEntriesEditor } from './ModelEntriesEditor';
+import { FormDisclosure, FormSection } from './FormSection';
 import { useModelDiscovery, type UseModelDiscoveryResult } from './useModelDiscovery';
 import { useSponsorUsageCheck, type SponsorUsageMessages } from './useSponsorUsageCheck';
 import styles from './sharedForm.module.scss';
 import { readRuntimePolicy, validateRuntimePolicy } from '../../runtimePolicy';
 import { readModelOptions, validateModelOptions } from '../../modelOptions';
 import type { ModelAlias } from '@/types';
+import { FieldLabel } from '@/components/ui/FieldLabel';
 import { RuntimePolicyEditor } from './RuntimePolicyEditor';
 import { ProviderBehaviorEditor } from './ProviderBehaviorEditor';
 import { pickProviderBehavior } from '../../providerBehavior';
 
+const NO_CONFLICTS: SponsorProtocol[] = [];
+
 interface SponsorProviderFormProps {
+  ambiguousProtocols?: SponsorProtocol[];
   brand?: SponsorProviderBrand;
   resource: ProviderResource | null;
   mode: 'create' | 'edit';
@@ -64,7 +69,6 @@ interface SponsorProviderFormProps {
 
 interface SponsorModelSectionProps {
   label: string;
-  description: string;
   protocol: SponsorProtocol;
   models: ModelEntryInput[];
   discovery: UseModelDiscoveryResult;
@@ -223,7 +227,6 @@ const sponsorKeyEntriesFromRaw = (
 
 function SponsorModelSection({
   label,
-  description,
   protocol,
   models,
   discovery,
@@ -250,9 +253,8 @@ function SponsorModelSection({
   };
 
   return (
-    <Collapsible label={label}>
+    <FormDisclosure label={label} count={existingModelNames.size || undefined}>
       <div className={styles.entriesList}>
-        <p className={styles.sectionDesc}>{description}</p>
         <div className={styles.entriesToolbar}>
           <button
             type="button"
@@ -260,7 +262,7 @@ function SponsorModelSection({
             onClick={openDiscovery}
             disabled={mutating}
           >
-            <IconDownload size={14} />
+            <IconDownload size={13} />
             <span>{t('providersPage.discovery.openButton')}</span>
           </button>
         </div>
@@ -297,7 +299,7 @@ function SponsorModelSection({
           onRemove={(modelIndex) => onChange(removeModelAt(modelsList, modelIndex))}
         />
       </div>
-    </Collapsible>
+    </FormDisclosure>
   );
 }
 
@@ -383,6 +385,11 @@ function SponsorKeyEntryCard({
     onChange({ ...entry, ...patch });
   };
 
+  const toggleLabel = expanded ? t('common.collapse') : t('common.expand');
+  const apiKeyToggleLabel = showApiKey
+    ? t('providersPage.form.hideApiKey')
+    : t('providersPage.form.showApiKey');
+
   return (
     <div className={styles.entryCard}>
       <div className={styles.entryCardHeader}>
@@ -406,14 +413,13 @@ function SponsorKeyEntryCard({
             type="button"
             className={styles.entryCardIconBtn}
             onClick={() => setExpanded((value) => !value)}
-            title={expanded ? t('common.collapse') : t('common.expand')}
-            aria-label={expanded ? t('common.collapse') : t('common.expand')}
+            title={toggleLabel}
+            aria-label={toggleLabel}
+            aria-expanded={expanded}
           >
             <IconChevronDown
-              className={[styles.entryCardChevron, expanded ? styles.entryCardChevronOpen : '']
-                .filter(Boolean)
-                .join(' ')}
-              size={14}
+              className={`${styles.entryCardChevron} ${expanded ? styles.entryCardChevronOpen : ''}`}
+              size={15}
             />
           </button>
           <button
@@ -424,297 +430,310 @@ function SponsorKeyEntryCard({
             title={t('providersPage.sponsor.removeGroupedKey')}
             aria-label={t('providersPage.sponsor.removeGroupedKey')}
           >
-            <IconX size={12} />
+            <IconX size={14} />
           </button>
         </div>
       </div>
 
       {expanded ? (
-        <div className={styles.entryCardBody}>
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={`${formId}-group-${index}-protocol`}>
-              {t('providersPage.sponsor.protocol')}
-            </label>
-            <Select
-              id={`${formId}-group-${index}-protocol`}
-              value={entry.protocol}
-              options={protocolOptions}
-              onChange={(value) =>
-                updateEntry({ protocol: value as SponsorProtocol, models: [emptyModel()] })
-              }
-              disabled={mutating}
-              ariaLabel={t('providersPage.sponsor.protocol')}
-            />
-            <span className={styles.labelHint}>{t('providersPage.sponsor.protocolHint')}</span>
-          </div>
-
-          {definition.baseUrlOptions.length > 1 ? (
+        <div className={`${styles.entryCardBody} ${styles.entryCardBodyRoomy}`}>
+          <FormSection title={t('providersPage.form.sections.connection')}>
             <div className={styles.field}>
-              <span className={styles.label}>
-                {t('providersPage.sponsor.urlMode', { provider: definition.displayName })}
-              </span>
-              <div className={styles.sponsorUrlOptions} role="radiogroup">
-                {definition.baseUrlOptions.map((option) => {
-                  const checked = definition.resolveBaseUrl(entry.baseUrl) === option.baseUrl;
-                  const className = [
-                    styles.sponsorUrlOption,
-                    checked ? styles.sponsorUrlOptionActive : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ');
-                  return (
-                    <label key={option.id} className={className}>
-                      <input
-                        type="radio"
-                        name={`${formId}-group-${index}-base-url`}
-                        value={option.baseUrl}
-                        checked={checked}
-                        onChange={() => updateEntry({ baseUrl: option.baseUrl })}
-                        disabled={mutating}
-                      />
-                      <span className={styles.sponsorUrlOptionText}>
-                        <span>{t(`providersPage.sponsor.urlOptions.${option.id}`)}</span>
-                        <small>{option.baseUrl}</small>
-                        {option.descriptionKey ? (
-                          <small className={styles.sponsorUrlOptionDescription}>
-                            {t(
-                              `providersPage.sponsor.urlOptionDescriptions.${option.descriptionKey}`
-                            )}
-                          </small>
-                        ) : null}
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
-              <span className={styles.labelHint}>{t('providersPage.sponsor.urlHint')}</span>
-            </div>
-          ) : null}
-
-          <div className={styles.sponsorProtocolCard}>
-            <span className={styles.sponsorProtocolName}>
-              {t('providersPage.sponsor.protocolEndpoint')}
-            </span>
-            <span className={styles.sponsorProtocolUrl}>{endpointUrl}</span>
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={`${formId}-group-${index}-api-key`}>
-              {t('providersPage.form.apiKey')}
-            </label>
-            <div className={styles.passwordField}>
-              <input
-                id={`${formId}-group-${index}-api-key`}
-                className={styles.passwordInput}
-                type={showApiKey ? 'text' : 'password'}
-                value={entry.apiKey}
-                onChange={(event) => updateEntry({ apiKey: event.target.value })}
-                autoComplete="new-password"
-                data-1p-ignore="true"
-                data-lpignore="true"
-                data-bwignore="true"
-                placeholder={
-                  mode === 'edit'
-                    ? t('providersPage.form.apiKeyEditPlaceholder')
-                    : t('providersPage.form.apiKeyCreatePlaceholder')
+              <label className={styles.label} htmlFor={`${formId}-group-${index}-protocol`}>
+                {t('providersPage.sponsor.protocol')}
+              </label>
+              <Select
+                id={`${formId}-group-${index}-protocol`}
+                value={entry.protocol}
+                options={protocolOptions}
+                onChange={(value) =>
+                  updateEntry({ protocol: value as SponsorProtocol, models: [emptyModel()] })
                 }
                 disabled={mutating}
+                ariaLabel={t('providersPage.sponsor.protocol')}
               />
-              <button
-                type="button"
-                className={styles.passwordToggle}
-                onClick={() => setShowApiKey((value) => !value)}
-                disabled={mutating}
-                aria-label={
-                  showApiKey
-                    ? t('providersPage.form.hideApiKey')
-                    : t('providersPage.form.showApiKey')
-                }
-                title={
-                  showApiKey
-                    ? t('providersPage.form.hideApiKey')
-                    : t('providersPage.form.showApiKey')
-                }
-              >
-                {showApiKey ? <IconEyeOff size={16} /> : <IconEye size={16} />}
-              </button>
             </div>
-            <span className={styles.labelHint}>{t('providersPage.sponsor.apiKeyHint')}</span>
-          </div>
 
-          {definition.supportsUsageCheck ? (
-            <div className={styles.sponsorUsageSection}>
-              <button
-                type="button"
-                className={styles.connectivityBtn}
-                onClick={() => void usageCheck.run()}
-                disabled={mutating || usageCheck.isLoading}
-              >
-                {usageCheck.isLoading ? (
-                  <IconLoader2 className={styles.statusIconLoading} size={14} />
-                ) : (
-                  <IconDollarSign size={14} />
-                )}
-                <span>
-                  {usageCheck.isLoading
-                    ? t('providersPage.sponsor.usageChecking')
-                    : t('providersPage.sponsor.usageCheck')}
-                </span>
-              </button>
-              {usageCheck.status.state === 'success' && usageSummary ? (
+            {definition.baseUrlOptions.length > 1 ? (
+              <div className={styles.field}>
+                <FieldLabel
+                  className={styles.labelLine}
+                  labelClassName={styles.label}
+                  id={`${formId}-group-${index}-base-url-label`}
+                  label={t('providersPage.sponsor.urlMode', { provider: definition.displayName })}
+                  hint={t('providersPage.sponsor.urlHint')}
+                  hintId={`${formId}-group-${index}-base-url-hint`}
+                />
                 <div
-                  className={[
-                    styles.sponsorUsageResult,
-                    usageHealthy ? '' : styles.sponsorUsageResultWarning,
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
+                  className={styles.sponsorUrlOptions}
+                  role="radiogroup"
+                  aria-labelledby={`${formId}-group-${index}-base-url-label`}
+                  aria-describedby={`${formId}-group-${index}-base-url-hint`}
                 >
-                  <div className={styles.sponsorUsageMain}>
-                    {usageHealthy ? (
-                      <IconCheckCircle2
-                        className={`${styles.statusIcon} ${styles.statusIconSuccess}`}
-                        size={14}
-                      />
-                    ) : (
-                      <IconAlertTriangle
-                        className={`${styles.statusIcon} ${styles.statusIconError}`}
-                        size={14}
-                      />
-                    )}
-                    <span>
-                      {t('providersPage.sponsor.usageRemaining', {
-                        amount: usageRemaining,
-                        unit: usageSummary.unit,
-                      })}
-                    </span>
-                  </div>
-                  {usageSummary.used !== null || usageSummary.limit !== null ? (
-                    <span className={styles.sponsorUsageMeta}>
-                      {t('providersPage.sponsor.usageBreakdown', {
-                        used: usageUsed,
-                        limit: usageLimit,
-                      })}
-                    </span>
-                  ) : null}
-                  {!usageHealthy ? (
-                    <span className={styles.sponsorUsageMeta}>
-                      {t('providersPage.sponsor.usageStatus', {
-                        status: usageSummary.status || t('providersPage.sponsor.usageInvalid'),
-                      })}
-                    </span>
-                  ) : null}
+                  {definition.baseUrlOptions.map((option) => {
+                    const checked = definition.resolveBaseUrl(entry.baseUrl) === option.baseUrl;
+                    return (
+                      <label
+                        key={option.id}
+                        className={`${styles.sponsorUrlOption} ${
+                          checked ? styles.sponsorUrlOptionActive : ''
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name={`${formId}-group-${index}-base-url`}
+                          value={option.baseUrl}
+                          checked={checked}
+                          onChange={() => updateEntry({ baseUrl: option.baseUrl })}
+                          disabled={mutating}
+                        />
+                        <span className={styles.sponsorUrlOptionText}>
+                          <span>{t(`providersPage.sponsor.urlOptions.${option.id}`)}</span>
+                          <small>{option.baseUrl}</small>
+                          {option.descriptionKey ? (
+                            <small className={styles.sponsorUrlOptionDescription}>
+                              {t(
+                                `providersPage.sponsor.urlOptionDescriptions.${option.descriptionKey}`
+                              )}
+                            </small>
+                          ) : null}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
-              ) : null}
-              {usageCheck.status.state === 'error' ? (
-                <div className={styles.connectivityError}>{usageCheck.status.message}</div>
-              ) : null}
+              </div>
+            ) : null}
+
+            <div className={styles.sponsorProtocolCard}>
+              <span className={styles.sponsorProtocolName}>
+                {t('providersPage.sponsor.protocolEndpoint')}
+              </span>
+              <span className={styles.sponsorProtocolUrl}>{endpointUrl}</span>
             </div>
-          ) : null}
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={`${formId}-group-${index}-proxy`}>
-              {t('providersPage.form.proxyUrl')}
-            </label>
-            <input
-              id={`${formId}-group-${index}-proxy`}
-              className={styles.input}
-              value={entry.proxyUrl}
-              onChange={(event) => updateEntry({ proxyUrl: event.target.value })}
-              placeholder="http://127.0.0.1:7890"
-              disabled={mutating}
-            />
-          </div>
-
-          <div className={styles.fieldRow}>
             <div className={styles.field}>
-              <label className={styles.label} htmlFor={`${formId}-group-${index}-prefix`}>
-                {t('providersPage.form.prefix')}
+              <FieldLabel
+                className={styles.labelLine}
+                labelClassName={styles.label}
+                htmlFor={`${formId}-group-${index}-api-key`}
+                label={t('providersPage.form.apiKey')}
+                hint={t('providersPage.sponsor.apiKeyHint')}
+                hintId={`${formId}-group-${index}-api-key-hint`}
+              />
+              <div className={styles.passwordField}>
+                <input
+                  id={`${formId}-group-${index}-api-key`}
+                  aria-describedby={`${formId}-group-${index}-api-key-hint`}
+                  className={`${styles.input} ${styles.passwordInput}`}
+                  type={showApiKey ? 'text' : 'password'}
+                  value={entry.apiKey}
+                  onChange={(event) => updateEntry({ apiKey: event.target.value })}
+                  autoComplete="new-password"
+                  data-1p-ignore="true"
+                  data-lpignore="true"
+                  data-bwignore="true"
+                  placeholder={
+                    mode === 'edit'
+                      ? t('providersPage.form.apiKeyEditPlaceholder')
+                      : t('providersPage.form.apiKeyCreatePlaceholder')
+                  }
+                  disabled={mutating}
+                />
+                <button
+                  type="button"
+                  className={styles.passwordToggle}
+                  onClick={() => setShowApiKey((value) => !value)}
+                  disabled={mutating}
+                  aria-label={apiKeyToggleLabel}
+                  title={apiKeyToggleLabel}
+                >
+                  {showApiKey ? <IconEyeOff size={15} /> : <IconEye size={15} />}
+                </button>
+              </div>
+            </div>
+
+            {definition.supportsUsageCheck ? (
+              <div className={styles.sponsorUsageSection}>
+                <button
+                  type="button"
+                  className={styles.connectivityBtn}
+                  onClick={() => void usageCheck.run()}
+                  disabled={mutating || usageCheck.isLoading}
+                >
+                  {usageCheck.isLoading ? (
+                    <IconLoader2 className={styles.statusIconLoading} size={13} />
+                  ) : (
+                    <IconDollarSign size={13} />
+                  )}
+                  <span>
+                    {usageCheck.isLoading
+                      ? t('providersPage.sponsor.usageChecking')
+                      : t('providersPage.sponsor.usageCheck')}
+                  </span>
+                </button>
+                {usageCheck.status.state === 'success' && usageSummary ? (
+                  <div
+                    className={`${styles.sponsorUsageResult} ${
+                      usageHealthy ? '' : styles.sponsorUsageResultWarning
+                    }`}
+                    role="status"
+                  >
+                    <div className={styles.sponsorUsageMain}>
+                      {usageHealthy ? (
+                        <IconCheckCircle2
+                          className={`${styles.statusIcon} ${styles.statusIconSuccess}`}
+                          size={14}
+                        />
+                      ) : (
+                        <IconAlertTriangle
+                          className={`${styles.statusIcon} ${styles.statusIconError}`}
+                          size={14}
+                        />
+                      )}
+                      <span>
+                        {t('providersPage.sponsor.usageRemaining', {
+                          amount: usageRemaining,
+                          unit: usageSummary.unit,
+                        })}
+                      </span>
+                    </div>
+                    {usageSummary.used !== null || usageSummary.limit !== null ? (
+                      <span className={styles.sponsorUsageMeta}>
+                        {t('providersPage.sponsor.usageBreakdown', {
+                          used: usageUsed,
+                          limit: usageLimit,
+                        })}
+                      </span>
+                    ) : null}
+                    {!usageHealthy ? (
+                      <span className={styles.sponsorUsageMeta}>
+                        {t('providersPage.sponsor.usageStatus', {
+                          status: usageSummary.status || t('providersPage.sponsor.usageInvalid'),
+                        })}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {usageCheck.status.state === 'error' ? (
+                  <div className={styles.connectivityError} role="status">
+                    {usageCheck.status.message}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+
+            <div className={styles.field}>
+              <label className={styles.label} htmlFor={`${formId}-group-${index}-proxy`}>
+                {t('providersPage.form.proxyUrl')}
               </label>
               <input
-                id={`${formId}-group-${index}-prefix`}
+                id={`${formId}-group-${index}-proxy`}
                 className={styles.input}
-                value={entry.prefix}
-                onChange={(event) => updateEntry({ prefix: event.target.value })}
+                value={entry.proxyUrl}
+                onChange={(event) => updateEntry({ proxyUrl: event.target.value })}
+                placeholder="http://127.0.0.1:7890"
                 disabled={mutating}
               />
             </div>
+          </FormSection>
+
+          <FormSection title={t('providersPage.form.sections.routing')}>
+            <div className={styles.fieldRow}>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor={`${formId}-group-${index}-prefix`}>
+                  {t('providersPage.form.prefix')}
+                </label>
+                <input
+                  id={`${formId}-group-${index}-prefix`}
+                  className={styles.input}
+                  value={entry.prefix}
+                  onChange={(event) => updateEntry({ prefix: event.target.value })}
+                  disabled={mutating}
+                />
+              </div>
+              <div className={styles.field}>
+                <label className={styles.label} htmlFor={`${formId}-group-${index}-priority`}>
+                  {t('providersPage.form.priority')}
+                </label>
+                <input
+                  id={`${formId}-group-${index}-priority`}
+                  type="number"
+                  className={styles.input}
+                  value={entry.priority ?? ''}
+                  onChange={(event) =>
+                    updateEntry({
+                      priority: event.target.value === '' ? undefined : Number(event.target.value),
+                    })
+                  }
+                  disabled={mutating}
+                />
+              </div>
+            </div>
+
             <div className={styles.field}>
-              <label className={styles.label} htmlFor={`${formId}-group-${index}-priority`}>
-                {t('providersPage.form.priority')}
-              </label>
+              <FieldLabel
+                className={styles.labelLine}
+                labelClassName={styles.label}
+                htmlFor={`${formId}-group-${index}-weight`}
+                label={t('providersPage.form.weight')}
+                hint={t('providersPage.form.weightHint')}
+                hintId={`${formId}-group-${index}-weight-hint`}
+              />
               <input
-                id={`${formId}-group-${index}-priority`}
+                id={`${formId}-group-${index}-weight`}
+                aria-describedby={`${formId}-group-${index}-weight-hint`}
                 type="number"
+                step="1"
+                max={MAX_CREDENTIAL_WEIGHT}
                 className={styles.input}
-                value={entry.priority ?? ''}
+                value={entry.weight ?? ''}
+                placeholder="1"
                 onChange={(event) =>
                   updateEntry({
-                    priority: event.target.value === '' ? undefined : Number(event.target.value),
+                    weight: event.target.value === '' ? undefined : Number(event.target.value),
                   })
                 }
                 disabled={mutating}
               />
             </div>
-          </div>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor={`${formId}-group-${index}-weight`}>
-              {t('providersPage.form.weight')}
+            <label className={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                role="switch"
+                className={styles.checkboxBox}
+                checked={entry.disabled}
+                disabled={mutating}
+                onChange={(event) => updateEntry({ disabled: event.target.checked })}
+              />
+              <span className={styles.checkboxText}>{t('providersPage.form.disabled')}</span>
             </label>
-            <input
-              id={`${formId}-group-${index}-weight`}
-              type="number"
-              step="1"
-              max={MAX_CREDENTIAL_WEIGHT}
-              className={styles.input}
-              value={entry.weight ?? ''}
-              placeholder="1"
-              onChange={(event) =>
-                updateEntry({
-                  weight: event.target.value === '' ? undefined : Number(event.target.value),
-                })
-              }
-              disabled={mutating}
-            />
-            <span className={styles.labelHint}>{t('providersPage.form.weightHint')}</span>
-          </div>
+          </FormSection>
 
-          <label className={styles.checkboxRow}>
-            <input
-              type="checkbox"
-              className={styles.checkboxBox}
-              checked={entry.disabled}
-              disabled={mutating}
-              onChange={(event) => updateEntry({ disabled: event.target.checked })}
-            />
-            <span className={styles.checkboxText}>
-              <span>{t('providersPage.form.disabled')}</span>
-              <small>{t('providersPage.form.disabledHint')}</small>
-            </span>
-          </label>
-
-          <ProviderBehaviorEditor
-            brand={entry.protocol === 'openai' ? 'openaiCompatibility' : entry.protocol}
-            value={entry}
-            onChange={updateEntry}
-            disabled={mutating}
-          />
-          <RuntimePolicyEditor
-            value={entry.runtimePolicy ?? readRuntimePolicy()}
-            onChange={(runtimePolicy) => updateEntry({ runtimePolicy })}
-            disabled={mutating}
-          />
-
-          <SponsorModelSection
-            label={t(`providersPage.sponsor.protocolModels.${modelKey}`)}
-            description={t(`providersPage.sponsor.protocolModelHints.${modelKey}`)}
-            protocol={entry.protocol}
-            models={entry.models}
-            discovery={discovery}
-            mutating={mutating}
-            onChange={(models) => updateEntry({ models })}
-          />
+          <FormSection title={t('providersPage.form.sections.advanced')}>
+            <div className={styles.disclosureGroup}>
+              <SponsorModelSection
+                label={t(`providersPage.sponsor.protocolModels.${modelKey}`)}
+                protocol={entry.protocol}
+                models={entry.models}
+                discovery={discovery}
+                mutating={mutating}
+                onChange={(models) => updateEntry({ models })}
+              />
+              <ProviderBehaviorEditor
+                brand={entry.protocol === 'openai' ? 'openaiCompatibility' : entry.protocol}
+                value={entry}
+                onChange={updateEntry}
+                disabled={mutating}
+              />
+              <RuntimePolicyEditor
+                value={entry.runtimePolicy ?? readRuntimePolicy()}
+                onChange={(runtimePolicy) => updateEntry({ runtimePolicy })}
+                disabled={mutating}
+              />
+            </div>
+          </FormSection>
         </div>
       ) : null}
     </div>
@@ -736,6 +755,7 @@ const buildInitialForm = (
 
 export function SponsorProviderForm({
   brand = 'apikeyFun',
+  ambiguousProtocols = NO_CONFLICTS,
   resource,
   mode,
   mutating,
@@ -745,7 +765,22 @@ export function SponsorProviderForm({
   onDirtyChange,
 }: SponsorProviderFormProps) {
   const { t } = useTranslation();
-  const definition = useMemo(() => getSponsorProviderDefinition(brand), [brand]);
+  const definition = useMemo(() => {
+    const sponsor = getSponsorProviderDefinition(brand);
+    const protocols = sponsor.protocols.filter(
+      (protocol) => !ambiguousProtocols.includes(protocol)
+    );
+    return {
+      ...sponsor,
+      protocols,
+      defaultProtocol: protocols.includes(sponsor.defaultProtocol)
+        ? sponsor.defaultProtocol
+        : (protocols[0] ?? sponsor.defaultProtocol),
+    };
+  }, [ambiguousProtocols, brand]);
+  const conflictWarning = ambiguousProtocols.length
+    ? sponsorConflictMessage(t, ambiguousProtocols)
+    : null;
   const [form, setForm] = useState<ProviderEntryFormInput>(() =>
     buildInitialForm(definition, resource, mode)
   );
@@ -794,6 +829,8 @@ export function SponsorProviderForm({
   };
 
   const validateEntries = (): string | null => {
+    if (entries.some(({ protocol }) => ambiguousProtocols.includes(protocol)))
+      return conflictWarning;
     for (const entry of entries) {
       const modelError = validateModelOptions(entry.models);
       if (modelError) return t(modelError);
@@ -854,45 +891,57 @@ export function SponsorProviderForm({
       ? getSponsorAggregationConflict(getSponsorRaw(resource, definition.brand))
       : null;
 
-  if (aggregationConflict) {
+  if (aggregationConflict || !definition.protocols.length) {
     return (
       <form id={formId} className={formClassName} onSubmit={(event) => event.preventDefault()}>
-        <div className={styles.errorBox}>{t('providersPage.sponsor.aggregationConflict')}</div>
+        <div className={styles.errorBox} role="alert">
+          {aggregationConflict ? t('providersPage.sponsor.aggregationConflict') : conflictWarning}
+        </div>
       </form>
     );
   }
 
   return (
     <form id={formId} className={formClassName} onSubmit={handleSubmit} noValidate>
-      <div className={styles.section}>
-        <h3 className={styles.sectionTitle}>{t('providersPage.sponsor.groupedKeysTitle')}</h3>
-        {entries.map((entry, index) => (
-          <SponsorKeyEntryCard
-            key={`${entry.protocol}-${index}`}
-            entry={entry}
-            index={index}
-            formId={formId}
-            mode={mode}
-            definition={definition}
-            usedProtocols={usedProtocols}
-            canRemove={mode === 'edit' || entries.length > 1}
-            mutating={mutating}
-            onChange={(nextEntry) => updateEntry(index, nextEntry)}
-            onRemove={() => removeEntry(index)}
-          />
-        ))}
-        <button
-          type="button"
-          className={styles.addBtn}
-          disabled={mutating || !missingProtocols.length}
-          onClick={addEntry}
-        >
-          <IconPlus size={12} />
-          <span>{t('providersPage.sponsor.addGroupedKey')}</span>
-        </button>
-      </div>
+      {conflictWarning && (
+        <div className={styles.errorBox} role="note">
+          {conflictWarning}
+        </div>
+      )}
+      <FormSection title={t('providersPage.sponsor.groupedKeysTitle')}>
+        <div className={styles.entriesList}>
+          {entries.map((entry, index) => (
+            <SponsorKeyEntryCard
+              key={`${entry.protocol}-${index}`}
+              entry={entry}
+              index={index}
+              formId={formId}
+              mode={mode}
+              definition={definition}
+              usedProtocols={usedProtocols}
+              canRemove={mode === 'edit' || entries.length > 1}
+              mutating={mutating}
+              onChange={(nextEntry) => updateEntry(index, nextEntry)}
+              onRemove={() => removeEntry(index)}
+            />
+          ))}
+          <button
+            type="button"
+            className={styles.addBtn}
+            disabled={mutating || !missingProtocols.length}
+            onClick={addEntry}
+          >
+            <IconPlus size={13} />
+            <span>{t('providersPage.sponsor.addGroupedKey')}</span>
+          </button>
+        </div>
+      </FormSection>
 
-      {error ? <div className={styles.errorBox}>{error}</div> : null}
+      {error ? (
+        <div className={styles.errorBox} role="alert">
+          {error}
+        </div>
+      ) : null}
     </form>
   );
 }

@@ -33,7 +33,6 @@ export function SectionConnectivity({
       indexLabel={SECTION_INDEX_LABELS.connectivity}
       icon={<Icon size={16} />}
       title={t('config_management.visual.sections.connectivity.title')}
-      description={t('config_management.visual.sections.connectivity.description')}
       animateIn={animateIn}
     >
       <SettingList>
@@ -43,7 +42,6 @@ export function SectionConnectivity({
           fieldId="authDir"
           size="lg"
           label={t('config_management.visual.sections.auth.auth_dir')}
-          description={t('config_management.visual.sections.auth.auth_dir_hint')}
           placeholder="~/.cli-proxy-api"
           value={values.authDir}
           onChange={(authDir) => onChange({ authDir })}
@@ -54,6 +52,15 @@ export function SectionConnectivity({
       <ApiKeysField {...fieldProps} />
 
       <SettingList>
+        <TextSetting
+          fieldId="serverId"
+          label={t('config_management.visual.serverExtras.serverId.label')}
+          description={t('config_management.visual.serverExtras.serverId.hint')}
+          value={values.serverId}
+          onChange={(serverId) => onChange({ serverId })}
+          disabled={disabled}
+          error={getValidationMessage(t, validationErrors?.serverId)}
+        />
         <TextSetting
           fieldId="githubToken"
           label={t('config_management.visual.sections.server.github_token')}
@@ -68,6 +75,8 @@ export function SectionConnectivity({
           fieldId="trustedProxies"
           label={t('config_management.visual.serverExtras.trustedProxies.label')}
           description={t('config_management.visual.serverExtras.trustedProxies.hint')}
+          // 安全提示（信任全地址段可伪造客户端 IP）且需重启：常驻可见。
+          keepDescriptionVisible
           error={getValidationMessage(t, validationErrors?.trustedProxies)}
         >
           <StringListEditor
@@ -80,17 +89,12 @@ export function SectionConnectivity({
         </BlockSetting>
       </SettingList>
 
-      <Collapsible
-        label={t('config_management.visual.sections.tls.title')}
-        hint={t('config_management.visual.sections.tls.description')}
-        defaultOpen={false}
-      >
+      <Collapsible label={t('config_management.visual.sections.tls.title')} defaultOpen={false}>
         <SettingList>
           <ToggleSetting
             fieldId="tlsEnable"
             wide
             label={t('config_management.visual.sections.tls.enable')}
-            description={t('config_management.visual.sections.tls.enable_desc')}
             checked={values.tlsEnable}
             disabled={disabled}
             onChange={(tlsEnable) => onChange({ tlsEnable })}
@@ -120,17 +124,15 @@ export function SectionConnectivity({
         </SettingList>
       </Collapsible>
 
-      <Collapsible
-        label={t('config_management.visual.sections.remote.title')}
-        hint={t('config_management.visual.sections.remote.description')}
-        defaultOpen={false}
-      >
+      <Collapsible label={t('config_management.visual.sections.remote.title')} defaultOpen={false}>
         <FieldStack>
           <SettingList>
             <ToggleSetting
               fieldId="rmAllowRemote"
               label={t('config_management.visual.sections.remote.allow_remote')}
               description={t('config_management.visual.sections.remote.allow_remote_desc')}
+              // 对其他主机开放管理接口：安全相关，常驻可见。
+              keepDescriptionVisible
               checked={values.rmAllowRemote}
               disabled={disabled}
               onChange={(rmAllowRemote) => onChange({ rmAllowRemote })}
@@ -138,7 +140,6 @@ export function SectionConnectivity({
             <ToggleSetting
               fieldId="rmDisableControlPanel"
               label={t('config_management.visual.sections.remote.disable_panel')}
-              description={t('config_management.visual.sections.remote.disable_panel_desc')}
               checked={values.rmDisableControlPanel}
               disabled={disabled}
               onChange={(rmDisableControlPanel) => onChange({ rmDisableControlPanel })}

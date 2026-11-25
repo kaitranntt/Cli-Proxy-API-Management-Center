@@ -15,6 +15,11 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/Button';
 import { PageTransition } from '@/components/common/PageTransition';
+import {
+  collectPluginProviderLogos,
+  EMPTY_PROVIDER_LOGOS,
+  PluginProviderLogos,
+} from '@/features/plugins/providerLogos';
 import { MainRoutes } from '@/router/MainRoutes';
 import { authFilesApi, pluginsApi } from '@/services/api';
 import {
@@ -28,7 +33,6 @@ import {
   IconSidebarQuickStart,
   IconSidebarQuota,
   IconSidebarRouting,
-  IconSidebarStore,
   IconSidebarSystem,
   IconSidebarUsage,
   IconChevronDown,
@@ -49,7 +53,8 @@ import {
   resolvePluginAssetURL,
   type PluginResourceEntry,
 } from '@/features/plugins/pluginResources';
-import { APIKEY_FUN_DISPLAY_NAME, hasApiKeyFunConfig } from '@/features/providers/sponsor';
+import { APIKEY_FUN_DISPLAY_NAME } from '@/features/providers/sponsor';
+import { hasApiKeyFunConfig } from '@/features/providers/sponsorBundle';
 import { triggerHeaderRefresh } from '@/hooks/useHeaderRefresh';
 import { LANGUAGE_LABEL_KEYS, LANGUAGE_ORDER } from '@/utils/constants';
 import { isSupportedLanguage } from '@/utils/language';
@@ -66,7 +71,6 @@ const sidebarIcons: Record<string, ReactNode> = {
   usage: <IconSidebarUsage size={18} />,
   routing: <IconSidebarRouting size={18} />,
   plugins: <IconSidebarPlugins size={18} />,
-  pluginStore: <IconSidebarStore size={18} />,
   config: <IconSidebarConfig size={18} />,
   logs: <IconSidebarLogs size={18} />,
   system: <IconSidebarSystem size={18} />,
@@ -342,7 +346,17 @@ export function MainLayout() {
   } | null>(null);
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false);
   const [themeMenuOpen, setThemeMenuOpen] = useState(false);
-  const [pluginResources, setPluginResources] = useState<PluginResourceEntry[]>([]);
+  const [pluginData, setPluginData] = useState<{
+    apiBase: string;
+    resources: PluginResourceEntry[];
+    logos: ReadonlyMap<string, string>;
+  } | null>(null);
+  const currentPluginData =
+    connectionStatus === 'connected' && supportsPlugin && pluginData?.apiBase === apiBase
+      ? pluginData
+      : null;
+  const pluginResources = currentPluginData?.resources ?? [];
+  const pluginRequestRef = useRef(0);
   const [expandedPluginResourceIDs, setExpandedPluginResourceIDs] = useState<Set<string>>(
     () => new Set()
   );
@@ -491,18 +505,24 @@ export function MainLayout() {
   }, [fetchConfig]);
 
   const loadPluginResources = useCallback(async () => {
+    const requestID = ++pluginRequestRef.current;
     if (connectionStatus !== 'connected' || !supportsPlugin) {
-      setPluginResources([]);
+      setPluginData(null);
       return;
     }
 
     try {
       const plugins = await pluginsApi.list();
-      setPluginResources(collectPluginResourceEntries(plugins.plugins));
+      if (requestID !== pluginRequestRef.current) return;
+      setPluginData({
+        apiBase,
+        resources: collectPluginResourceEntries(plugins.plugins),
+        logos: collectPluginProviderLogos(plugins.plugins, apiBase),
+      });
     } catch {
-      setPluginResources([]);
+      if (requestID === pluginRequestRef.current) setPluginData(null);
     }
-  }, [connectionStatus, supportsPlugin]);
+  }, [apiBase, connectionStatus, supportsPlugin]);
 
   const loadAuthFilesCount = useCallback(async () => {
     const requestID = ++authFilesCountRequestRef.current;
@@ -531,6 +551,7 @@ export function MainLayout() {
     window.addEventListener(AUTH_FILES_CHANGED_EVENT, loadAuthFilesCount);
 
     return () => {
+      pluginRequestRef.current += 1;
       authFilesCountRequestRef.current += 1;
       window.clearTimeout(timer);
       window.removeEventListener(PLUGIN_RESOURCES_REFRESH_EVENT, loadPluginResources);
@@ -689,12 +710,6 @@ export function MainLayout() {
                 labelKey: 'nav.plugins',
                 metaKey: 'nav_meta.plugins',
                 icon: sidebarIcons.plugins,
-              },
-              {
-                path: '/plugin-store',
-                labelKey: 'nav.plugin_store',
-                metaKey: 'nav_meta.plugin_store',
-                icon: sidebarIcons.pluginStore,
               },
             ]
           : []),
@@ -1174,7 +1189,6 @@ export function MainLayout() {
               {showSidebarLabels && (
                 <span className="sidebar-brand-text">
                   <span className="sidebar-brand-title">{abbrBrandName}</span>
-                  <span className="sidebar-brand-subtitle">{t('sidebar.subtitle')}</span>
                 </span>
               )}
             </div>
@@ -1220,12 +1234,14 @@ export function MainLayout() {
               isPluginResourcePage ? ' main-content-plugin-resource' : ''
             }`}
           >
-            <PageTransition
-              render={(location) => <MainRoutes location={location} />}
-              getRouteOrder={getRouteOrder}
-              getTransitionVariant={getTransitionVariant}
-              scrollContainerRef={contentRef}
-            />
+            <PluginProviderLogos.Provider value={currentPluginData?.logos ?? EMPTY_PROVIDER_LOGOS}>
+              <PageTransition
+                render={(location) => <MainRoutes location={location} />}
+                getRouteOrder={getRouteOrder}
+                getTransitionVariant={getTransitionVariant}
+                scrollContainerRef={contentRef}
+              />
+            </PluginProviderLogos.Provider>
           </main>
         </div>
       </div>

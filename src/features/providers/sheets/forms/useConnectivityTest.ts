@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { ApiCallRequest } from '@/services/api/apiCall';
 import { apiCallApi, getApiCallErrorMessage } from '@/services/api';
 import {
   buildCodexResponsesEndpoint,
@@ -12,6 +13,8 @@ import {
 import { buildHeaderObject, hasHeader } from '@/utils/headers';
 import { getErrorMessage } from '@/utils/helpers';
 import type { ApiKeyEntryInput, ModelEntryInput, ProviderBrand } from '../../types';
+import { resolveProbeTransport } from './probeTransport';
+import { guardConfigConnection } from '@/services/api/configValue';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_ANTHROPIC_VERSION = '2023-06-01';
@@ -47,6 +50,24 @@ const pickModel = (testModel: string | undefined, models: ModelEntryInput[]): st
   return '';
 };
 
+// Match the backend compatibility helper: trim, strip the last parenthesized suffix,
+// and compare names before aliases without changing the model sent by pickModel.
+const resolveModelConfig = (model: string, models: ModelEntryInput[]) => {
+  const normalize = (value: string): string => {
+    const trimmed = value.trim();
+    const lastOpen = trimmed.lastIndexOf('(');
+    return (lastOpen !== -1 && trimmed.endsWith(')') ? trimmed.slice(0, lastOpen) : trimmed)
+      .trim()
+      .toLowerCase();
+  };
+  const normalized = normalize(model);
+  if (!normalized) return undefined;
+  return (
+    models.find((entry) => normalize(entry.name) === normalized) ??
+    models.find((entry) => normalize(entry.alias ?? '') === normalized)
+  );
+};
+
 const resolveBearerToken = (headers: Record<string, string>): string => {
   const auth = Object.entries(headers).find(([k]) => k.toLowerCase() === 'authorization')?.[1];
   if (!auth) return '';
@@ -58,6 +79,7 @@ export interface UseConnectivityTestArgs {
   brand: ProviderBrand;
   baseUrl: string;
   proxyUrl?: string;
+  savedProxyUrl?: string;
   testModel?: string;
   models: ModelEntryInput[];
   formHeaders: Array<{ key: string; value: string }>;
@@ -89,6 +111,24 @@ export interface UseConnectivityTestResult {
   runClaude: () => Promise<void>;
 }
 
+async function requestProbe(request: ApiCallRequest, savedProxyUrl?: string) {
+  const checkConnection = guardConfigConnection();
+  const needsToken =
+    Object.values(request.header ?? {}).some((v) => v.includes('$TOKEN$')) ||
+    Boolean(request.data?.includes('$TOKEN$'));
+  const transport = await resolveProbeTransport(
+    request.proxy_url,
+    savedProxyUrl,
+    request.authIndex,
+    needsToken
+  );
+  checkConnection();
+  return apiCallApi.request(
+    { ...request, authIndex: transport.authIndex, proxy_url: transport.proxyUrl },
+    { timeout: DEFAULT_TIMEOUT_MS }
+  );
+}
+
 export function useConnectivityTest(
   args: UseConnectivityTestArgs,
   messages: ConnectivityErrorMessages
@@ -97,6 +137,7 @@ export function useConnectivityTest(
     brand,
     baseUrl,
     proxyUrl,
+    savedProxyUrl,
     testModel,
     models,
     formHeaders,
@@ -152,7 +193,9 @@ export function useConnectivityTest(
 
   const signature = useMemo(() => {
     const h = formHeaders.map((it) => `${it.key}:${it.value}`).join('|');
-    const m = models.map((it) => `${it.name}:${it.alias ?? ''}`).join('|');
+    const m = models
+      .map((it) => `${it.name}:${it.alias ?? ''}:${it.useMaxCompletionTokens === true}`)
+      .join('|');
     return [
       baseUrl,
       proxyUrl ?? '',
@@ -238,10 +281,10 @@ export function useConnectivityTest(
       updateOpenaiStatus(idx, { state: 'loading', message: '' });
       setInFlight((n) => n + 1);
       try {
-        const result = await apiCallApi.request(
+        const result = await requestProbe(
           {
             authIndex: resolvedAuthIndex,
-            proxy_url: entry?.proxyUrl?.trim() || undefined,
+            proxy_url: entry?.proxyUrl,
             method: 'POST',
             url: endpoint,
             header: headerObj,
@@ -249,10 +292,12 @@ export function useConnectivityTest(
               model,
               messages: [{ role: 'user', content: 'Hi' }],
               stream: false,
-              max_tokens: 5,
+              ...(resolveModelConfig(model, models)?.useMaxCompletionTokens === true
+                ? { max_completion_tokens: 5 }
+                : { max_tokens: 5 }),
             }),
           },
-          { timeout: DEFAULT_TIMEOUT_MS }
+          entry?.savedProxyUrl
         );
         if (result.statusCode < 200 || result.statusCode >= 300) {
           throw new Error(getApiCallErrorMessage(result));
@@ -337,10 +382,10 @@ export function useConnectivityTest(
     setCodexStatus({ state: 'loading', message: '' });
     setInFlight((n) => n + 1);
     try {
-      const result = await apiCallApi.request(
+      const result = await requestProbe(
         {
           authIndex: resolvedAuthIndex,
-          proxy_url: proxyUrl?.trim() || undefined,
+          proxy_url: proxyUrl,
           method: 'POST',
           url: endpoint,
           header: headerObj,
@@ -350,7 +395,7 @@ export function useConnectivityTest(
             stream: false,
           }),
         },
-        { timeout: DEFAULT_TIMEOUT_MS }
+        savedProxyUrl
       );
       if (result.statusCode < 200 || result.statusCode >= 300) {
         throw new Error(getApiCallErrorMessage(result));
@@ -374,6 +419,7 @@ export function useConnectivityTest(
     messages,
     models,
     testModel,
+    savedProxyUrl,
     proxyUrl,
   ]);
 
@@ -425,10 +471,10 @@ export function useConnectivityTest(
     setGeminiStatus({ state: 'loading', message: '' });
     setInFlight((n) => n + 1);
     try {
-      const result = await apiCallApi.request(
+      const result = await requestProbe(
         {
           authIndex: resolvedAuthIndex,
-          proxy_url: proxyUrl?.trim() || undefined,
+          proxy_url: proxyUrl,
           method: 'POST',
           url: endpoint,
           header: headerObj,
@@ -441,7 +487,7 @@ export function useConnectivityTest(
                 }
           ),
         },
-        { timeout: DEFAULT_TIMEOUT_MS }
+        savedProxyUrl
       );
       if (result.statusCode < 200 || result.statusCode >= 300) {
         throw new Error(getApiCallErrorMessage(result));
@@ -465,6 +511,7 @@ export function useConnectivityTest(
     messages,
     models,
     testModel,
+    savedProxyUrl,
     proxyUrl,
   ]);
 
@@ -511,10 +558,10 @@ export function useConnectivityTest(
     setClaudeStatus({ state: 'loading', message: '' });
     setInFlight((n) => n + 1);
     try {
-      const result = await apiCallApi.request(
+      const result = await requestProbe(
         {
           authIndex: resolvedAuthIndex,
-          proxy_url: proxyUrl?.trim() || undefined,
+          proxy_url: proxyUrl,
           method: 'POST',
           url: endpoint,
           header: headerObj,
@@ -524,7 +571,7 @@ export function useConnectivityTest(
             messages: [{ role: 'user', content: 'Hi' }],
           }),
         },
-        { timeout: DEFAULT_TIMEOUT_MS }
+        savedProxyUrl
       );
       if (result.statusCode < 200 || result.statusCode >= 300) {
         throw new Error(getApiCallErrorMessage(result));
@@ -548,6 +595,7 @@ export function useConnectivityTest(
     messages,
     models,
     testModel,
+    savedProxyUrl,
     proxyUrl,
   ]);
 

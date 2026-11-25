@@ -24,11 +24,16 @@ import {
   normalizeStringValue,
   parseAntigravityPayload,
   buildAntigravityQuotaGroups,
+  compareAntigravityQuotaBuckets,
   createStatusError,
   getStatusFromError,
   isAntigravityFile,
   isDisabledAuthFile,
 } from '@/utils/quota';
+import {
+  AntigravityValidationError,
+  getAntigravityValidationError,
+} from '@/services/api/antigravityValidation';
 import { normalizeAuthIndex } from '@/utils/authIndex';
 import type { QuotaProviderData } from '../types';
 
@@ -138,8 +143,11 @@ const fetchAntigravityQuota = async (
 
   let lastError = '';
   let lastStatus: number | undefined;
+  let validationError: AntigravityValidationError | undefined;
   let priorityStatus: number | undefined;
   let hadSuccess = false;
+  const collectedGroups = new Map<string, AntigravityQuotaGroup>();
+  let serverTimeOffsetMs: number | null = null;
 
   for (const url of ANTIGRAVITY_QUOTA_URLS) {
     try {
@@ -152,6 +160,11 @@ const fetchAntigravityQuota = async (
       });
 
       if (result.statusCode < 200 || result.statusCode >= 300) {
+        if (result.statusCode === 403 && !validationError?.url) {
+          validationError =
+            getAntigravityValidationError(result, t('antigravity_quota.verify_account')) ??
+            validationError;
+        }
         lastError = getApiCallErrorMessage(result);
         lastStatus = result.statusCode;
         if (result.statusCode === 403 || result.statusCode === 404) {
@@ -175,11 +188,26 @@ const fetchAntigravityQuota = async (
         continue;
       }
 
-      return {
-        groups,
-        subscription: await subscriptionPromise,
-        serverTimeOffsetMs: resolveResponseServerTimeOffsetMs(result.header),
-      };
+      if (collectedGroups.size === 0) {
+        serverTimeOffsetMs = resolveResponseServerTimeOffsetMs(result.header);
+      }
+      for (const group of groups) {
+        const existing = collectedGroups.get(group.id);
+        if (!existing) {
+          collectedGroups.set(group.id, group);
+          continue;
+        }
+        const bucketIds = new Set(existing.buckets.map((bucket) => bucket.id));
+        existing.buckets.push(...group.buckets.filter((bucket) => !bucketIds.has(bucket.id)));
+        existing.buckets.sort(compareAntigravityQuotaBuckets);
+      }
+
+      // Daily hosts can return a successful but partial Claude/GPT-only summary.
+      // Keep real buckets from each response until a Gemini pool is available.
+      const hasGemini = Array.from(collectedGroups.values()).some((group) =>
+        group.buckets.some((bucket) => bucket.id.toLowerCase().startsWith('gemini-'))
+      );
+      if (hasGemini) break;
     } catch (err: unknown) {
       lastError = err instanceof Error ? err.message : t('common.unknown_error');
       const status = getStatusFromError(err);
@@ -192,8 +220,14 @@ const fetchAntigravityQuota = async (
     }
   }
 
+  if (validationError && collectedGroups.size === 0) throw validationError;
+
   if (hadSuccess) {
-    return { groups: [], subscription: await subscriptionPromise, serverTimeOffsetMs: null };
+    return {
+      groups: Array.from(collectedGroups.values()),
+      subscription: await subscriptionPromise,
+      serverTimeOffsetMs,
+    };
   }
 
   throw createStatusError(lastError || t('common.unknown_error'), priorityStatus ?? lastStatus);
@@ -218,12 +252,13 @@ export const ANTIGRAVITY_CONFIG: QuotaProviderData<AntigravityQuotaState, Antigr
     subscription: data.subscription,
     serverTimeOffsetMs: data.serverTimeOffsetMs,
   }),
-  buildErrorState: (message, status) => ({
+  buildErrorState: (message, status, cause) => ({
     status: 'error',
     groups: [],
     subscription: null,
     serverTimeOffsetMs: null,
     error: message,
     errorStatus: status,
+    ...(cause instanceof AntigravityValidationError && { validation: { url: cause.url } }),
   }),
 };

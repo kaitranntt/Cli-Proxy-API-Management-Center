@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { parse as parseYaml, parseDocument } from 'yaml';
 import { useConfigStore, useNotificationStore } from '@/stores';
 import { configFileApi } from '@/services/api/configFile';
+import { parseConfigDocument } from '@/services/api/configYaml';
+import { configDraftErrorMessage } from '../configDraftError';
 import { apiClient } from '@/services/api/client';
 import {
   applyConfigPatch,
@@ -48,7 +50,7 @@ export function hasTrustedProxiesChange(beforeYaml: string, afterYaml: string): 
 
 function normalizeYamlForVisualDiff(yamlContent: string): string {
   try {
-    const doc = parseDocument(yamlContent);
+    const doc = parseConfigDocument(yamlContent);
     return doc.toString({ indent: 2, lineWidth: 120, minContentWidth: 0 });
   } catch {
     return yamlContent;
@@ -76,8 +78,18 @@ export function buildConfigSaveDraft(
   applyVisualChanges: (yaml: string) => string
 ): string {
   if (sourceDirty) {
-    if (mode === 'source') return sourceDraftYaml;
-    throw new Error('Unsaved source edits must be saved or discarded before visual editing');
+    if (mode !== 'source') {
+      throw new Error('Unsaved source edits must be saved or discarded before visual editing');
+    }
+    // CodeMirror emits LF regardless of the loaded file's line endings. Restore CRLF
+    // before both preview and PUT, without parsing YAML or changing the final newline.
+    if (
+      latestServerYaml.includes('\r\n') &&
+      !/[\r\n]/.test(latestServerYaml.replace(/\r\n/g, ''))
+    ) {
+      return sourceDraftYaml.replace(/\r?\n/g, '\r\n');
+    }
+    return sourceDraftYaml;
   }
   return applyVisualChanges(latestServerYaml);
 }
@@ -267,12 +279,7 @@ export function useConfigDocument({
       }
     } catch (err: unknown) {
       if (!operation.isCurrent()) return;
-      const message =
-        err instanceof ConfigDraftConflictError
-          ? t('config_management.concurrent_list_conflict', { path: err.path.join('.') })
-          : err instanceof Error
-            ? err.message
-            : '';
+      const message = configDraftErrorMessage(t, err);
       if (writeAttempted && previewMode === 'visual') {
         // v8 field mutations are not a transaction. Never roll back with a full document.
         // Re-read immediately so changing an already-applied value back remains a dirty edit.
@@ -298,7 +305,7 @@ export function useConfigDocument({
           // recovery; reloading can explicitly replace the draft from the server.
           showNotification(
             recoveryError instanceof ConfigDraftConflictError
-              ? t('config_management.concurrent_list_conflict', {
+              ? t(`config_management.${recoveryError.reason}`, {
                   path: recoveryError.path.join('.'),
                 })
               : t('config_management.precise_save_recovery_required'),
@@ -312,7 +319,7 @@ export function useConfigDocument({
           // Keep the primary mutation/readback error; the cache is already invalidated.
         }
       } else {
-        showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
+        showNotification(message, 'error');
       }
     } finally {
       if (operation.isCurrent()) setSaving(false);
@@ -364,8 +371,8 @@ export function useConfigDocument({
         }
       }
 
-      // Generated source still merges visual edits onto fresh YAML; a real source draft is
-      // preserved verbatim. The visible mode determines the wire protocol, not edit origin.
+      // Generated source merges visual edits onto fresh YAML; actual source edits bypass
+      // YAML serialization. The visible mode determines the wire protocol, not edit origin.
       const nextMergedYaml = recoveryRequired
         ? recoverVisualDraft(latestServerYaml)
         : buildConfigSaveDraft(
@@ -406,13 +413,7 @@ export function useConfigDocument({
       setDiffModalOpen(true);
     } catch (err: unknown) {
       if (!operation.isCurrent()) return;
-      const message =
-        err instanceof ConfigDraftConflictError
-          ? t('config_management.concurrent_list_conflict', { path: err.path.join('.') })
-          : err instanceof Error
-            ? err.message
-            : '';
-      showNotification(`${t('notification.save_failed')}: ${message}`, 'error');
+      showNotification(configDraftErrorMessage(t, err), 'error');
     } finally {
       if (operation.isCurrent()) setSaving(false);
     }

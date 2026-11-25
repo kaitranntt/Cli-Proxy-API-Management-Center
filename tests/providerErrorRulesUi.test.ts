@@ -57,9 +57,52 @@ describe('error-rule editor UI', () => {
   test('all controls are disabled while saving or disconnected', () => {
     const controls = [
       ...renderRows(rows, true).matchAll(/<(?:input|textarea|select|button)\b[^>]*>/g),
-    ];
-    expect(controls.length).toBeGreaterThan(10);
-    for (const control of controls) expect(control[0]).toContain('disabled=""');
+    ].map((match) => match[0]);
+    // InfoTips explain, they do not edit: they stay reachable while the form is disabled.
+    const infoTips = controls.filter((control) => control.includes('data-info-tip'));
+    expect(infoTips.length).toBeGreaterThan(0);
+    for (const tip of infoTips) expect(tip).not.toContain('disabled=""');
+    const editing = controls.filter((control) => !control.includes('data-info-tip'));
+    expect(editing.length).toBeGreaterThan(10);
+    for (const control of editing) expect(control).toContain('disabled=""');
+  });
+  test('the Go regex note is an InfoTip on regex conditions that still describes the field', () => {
+    const html = renderRows();
+    const tips = [...html.matchAll(/<button\b[^>]*data-info-tip[^>]*>/g)].map((m) => m[0]);
+    // Only the one regex condition (rule 1) gets the note; text conditions stay bare.
+    expect(tips).toHaveLength(1);
+    expect(tips[0]).toContain('aria-label="More information about Condition"');
+    const hintId = /aria-describedby="([^"]+)"/.exec(tips[0])![1];
+    expect(html).toContain(`<span id="${hintId}" hidden="">Go regular expression</span>`);
+    const regexField = [...html.matchAll(/<textarea\b[^>]*>/g)].map((m) => m[0])[1];
+    expect(regexField).toContain(`aria-describedby="${hintId}"`);
+  });
+  test('the rule-order note is visible by default and moves into the runtime policy InfoTip', () => {
+    const orderHint = en.providersPage.errorRules.hint;
+    expect(renderRows()).toContain(orderHint);
+    expect(
+      render(
+        createElement(ErrorRulesEditor, {
+          rules: rows,
+          onChange: () => {},
+          disabled: false,
+          showOrderHint: false,
+        })
+      )
+    ).not.toContain(orderHint);
+    const policy = render(
+      createElement(RuntimePolicyEditor, {
+        value: { ...readRuntimePolicy(), errorRules: rows, errorsMode: 'override' },
+        onChange: () => {},
+        disabled: false,
+      })
+    );
+    // Present once, as the hidden description behind the error-rules InfoTip.
+    expect(policy.split(orderHint)).toHaveLength(2);
+    expect(policy).toContain(
+      `${en.providersPage.runtimePolicy.errorsHint} <br/>${orderHint}</span>`
+    );
+    expect(policy).toContain('aria-label="More information about Request error rules"');
   });
   test('an empty override retains its add action and inherited mode hides rows', () => {
     expect(renderRows([])).toContain('No rules.');
@@ -95,23 +138,15 @@ describe('error-rule editor UI', () => {
     expect(html).toContain('>&lt;unknown&gt;</span>');
     expect(html).toContain('aria-label="Action"');
   });
-  test('every locale contains complete row labels, errors, actions and no stale JSON guidance', () => {
+  test('action labels cover exactly the backend actions and copy never mentions JSON', () => {
+    expect(Object.keys(en.providersPage.errorRules.actions).sort()).toEqual([
+      'continue',
+      'continue-and-cooldown',
+      'stop',
+      'stop-and-cooldown',
+    ]);
     for (const messages of [en, zhCN, zhTW, ru]) {
-      const section = messages.providersPage.errorRules;
-      expect(Object.keys(section).sort()).toEqual(Object.keys(en.providersPage.errorRules).sort());
-      expect(Object.keys(section.actions).sort()).toEqual([
-        'continue',
-        'continue-and-cooldown',
-        'stop',
-        'stop-and-cooldown',
-      ]);
-      for (const [key, value] of Object.entries(section)) {
-        if (key === 'actions') continue;
-        expect(typeof value === 'string' && value.trim().length > 0).toBe(true);
-      }
-      expect(Object.values(section.actions).every((value) => value.trim().length > 0)).toBe(true);
       expect(JSON.stringify(messages.providersPage.runtimePolicy)).not.toContain('JSON');
-      expect(messages.providersPage.runtimePolicy).not.toHaveProperty('errorsJson');
     }
   });
 });

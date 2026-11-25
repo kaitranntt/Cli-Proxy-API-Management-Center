@@ -8,7 +8,7 @@
 import type { ComponentType } from 'react';
 import type { TFunction } from 'i18next';
 import { useQuotaStore } from '@/stores';
-import type { AuthFileItem } from '@/types';
+import type { AntigravityQuotaState, AuthFileItem } from '@/types';
 import type { QuotaBodyProps } from '../types';
 import type { QuotaProviderType, QuotaStore } from './types';
 import { ANTIGRAVITY_CONFIG } from './antigravity/data';
@@ -19,6 +19,8 @@ import { DEVIN_CONFIG } from './devin/data';
 import { DevinQuotaBody } from './devin/DevinQuotaBody';
 import { CODEX_CONFIG } from './codex/data';
 import { CodexQuotaBody } from './codex/CodexQuotaBody';
+import { COPILOT_CONFIG } from './copilot/data';
+import { CopilotQuotaBody } from './copilot/CopilotQuotaBody';
 import { META_CONFIG } from './meta/data';
 import { MetaQuotaBody } from './meta/MetaQuotaBody';
 import { KIMI_CONFIG } from './kimi/data';
@@ -35,6 +37,7 @@ export interface QuotaCardState {
   status: 'idle' | 'loading' | 'success' | 'error';
   error?: string;
   errorStatus?: number;
+  validation?: AntigravityQuotaState['validation'];
 }
 
 export interface QuotaAdapter {
@@ -49,7 +52,7 @@ export interface QuotaAdapter {
   storeSetter: keyof QuotaStore;
   buildLoadingState: () => QuotaCardState;
   buildSuccessState: (data: unknown) => QuotaCardState;
-  buildErrorState: (message: string, status?: number) => QuotaCardState;
+  buildErrorState: (message: string, status?: number, cause?: unknown) => QuotaCardState;
   Body: ComponentType<QuotaBodyProps<QuotaCardState>>;
 }
 
@@ -62,6 +65,7 @@ export const QUOTA_ADAPTERS: Record<QuotaProviderType, QuotaAdapter> = {
   codex: { ...CODEX_CONFIG, Body: CodexQuotaBody } as unknown as QuotaAdapter,
   devin: { ...DEVIN_CONFIG, Body: DevinQuotaBody } as unknown as QuotaAdapter,
   kimi: { ...KIMI_CONFIG, Body: KimiQuotaBody } as unknown as QuotaAdapter,
+  copilot: { ...COPILOT_CONFIG, Body: CopilotQuotaBody } as unknown as QuotaAdapter,
   meta: { ...META_CONFIG, Body: MetaQuotaBody } as unknown as QuotaAdapter,
   qoder: { ...QODER_CONFIG, Body: QoderQuotaBody } as unknown as QuotaAdapter,
   plugin: { ...PLUGIN_CONFIG, Body: PluginQuotaBody } as unknown as QuotaAdapter,

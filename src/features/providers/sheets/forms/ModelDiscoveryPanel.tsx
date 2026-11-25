@@ -46,7 +46,9 @@ export function ModelDiscoveryPanel({
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return catalog;
-    return catalog.filter((m) => `${m.name} ${m.alias ?? ''}`.toLowerCase().includes(q));
+    return catalog.filter((m) =>
+      `${m.name} ${m.alias ?? ''} ${m.displayName ?? ''}`.toLowerCase().includes(q)
+    );
   }, [catalog, search]);
 
   const allSelectableChecked = filtered.length > 0 && filtered.every((m) => selected.has(m.name));
@@ -79,12 +81,15 @@ export function ModelDiscoveryPanel({
     });
   };
 
-  const renderModelLabel = (model: ModelInfo) => (
-    <span className={styles.discoveryNameGroup}>
-      <span className={styles.discoveryName}>{model.name}</span>
-      {model.alias ? <span className={styles.discoveryAlias}>{model.alias}</span> : null}
-    </span>
-  );
+  const renderModelLabel = (model: ModelInfo) => {
+    const label = model.alias || model.displayName;
+    return (
+      <span className={styles.discoveryNameGroup}>
+        <span className={styles.discoveryName}>{model.name}</span>
+        {label ? <span className={styles.discoveryAlias}>{label}</span> : null}
+      </span>
+    );
+  };
 
   return (
     <div className={styles.discoveryPanel}>
@@ -95,7 +100,7 @@ export function ModelDiscoveryPanel({
           </span>
           <input
             type="search"
-            className={styles.discoverySearch}
+            className={`${styles.input} ${styles.discoverySearch}`}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('providersPage.discovery.searchPlaceholder')}
@@ -104,7 +109,7 @@ export function ModelDiscoveryPanel({
         </div>
         <button
           type="button"
-          className={styles.connectivityBtn}
+          className={styles.connectivityBtnGhost}
           onClick={onReload}
           disabled={loading || mutating}
           aria-label={t('providersPage.discovery.reload')}
@@ -170,7 +175,7 @@ export function ModelDiscoveryPanel({
       <div className={styles.discoveryFooter}>
         <button
           type="button"
-          className={styles.connectivityBtnGhost}
+          className={`${styles.footerBtn} ${styles.footerBtnGhost} ${styles.discoveryApplyBtn}`}
           onClick={onClose}
           disabled={mutating}
         >
@@ -178,7 +183,7 @@ export function ModelDiscoveryPanel({
         </button>
         <button
           type="button"
-          className={styles.discoveryApplyBtn}
+          className={`${styles.footerBtn} ${styles.footerBtnPrimary} ${styles.discoveryApplyBtn}`}
           onClick={handleApply}
           disabled={!canApply}
         >

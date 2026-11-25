@@ -38,6 +38,22 @@ export const parseExcludedRulesText = (text: string): string[] =>
 
 export const formatExcludedRulesText = (rules: readonly string[]): string => rules.join('\n');
 
+export interface RuleEditorDraft {
+  text: string;
+  baseRules: readonly string[];
+  baseCandidates: readonly string[];
+  published: readonly string[];
+}
+
+/** Keep raw input across our own updates, but never overwrite an external reset. */
+export function currentRuleEditorDraft(draft: RuleEditorDraft | null, rules: readonly string[]) {
+  return draft &&
+    draft.published.length === rules.length &&
+    draft.published.every((rule, i) => rule === rules[i])
+    ? draft
+    : null;
+}
+
 export function matchesExcludedRule(rule: string, modelId: string): boolean {
   const normalizedRule = ruleKey(rule);
   const normalizedModel = ruleKey(modelId);
@@ -50,17 +66,6 @@ export function matchesExcludedRule(rule: string, modelId: string): boolean {
     .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
     .join('.*');
   return new RegExp(`^${escaped}$`, 'i').test(normalizedModel);
-}
-
-/** 该模型是否被某条**通配符**规则命中（精确规则不算）。 */
-export const isMatchedByWildcardRule = (rules: Iterable<string>, modelId: string): boolean =>
-  Array.from(rules).some((rule) => isWildcardRule(rule) && matchesExcludedRule(rule, modelId));
-
-/** 规则列表里是否存在与 candidate 字面相等（忽略大小写）的一条。不做通配符展开。 */
-export function hasExcludedRule(rules: Iterable<string>, candidate: string): boolean {
-  const candidateKey = ruleKey(candidate);
-  if (!candidateKey) return false;
-  return Array.from(rules).some((rule) => ruleKey(rule) === candidateKey);
 }
 
 /**

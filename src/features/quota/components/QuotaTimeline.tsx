@@ -18,9 +18,10 @@ import { useTranslation } from 'react-i18next';
 import { formatRelativeInstant, TYPE_COLORS } from '@/utils/quota';
 import { getQuotaCacheKey, getQuotaDisplayName } from '@/utils/quota/identity';
 import { useNow } from '@/hooks/useNow';
+import { InfoTip } from '@/components/ui/Tooltip';
 import type { ResolvedTheme, ThemeColors } from '@/types';
 import {
-  buildTimelineLane,
+  buildTimelineLanes,
   laneHasWindow,
   projectLane,
   projectResetCredits,
@@ -31,6 +32,7 @@ import {
 import type { TimelineLane, TimelineMode } from '../quotaTimelineModel';
 import type { QuotaFileEntry } from '../logic';
 import type { QuotaCardState } from '../providers';
+import { resolveAntigravityGroupLabelKey } from '../providers/antigravity/labels';
 import styles from './QuotaTimeline.module.scss';
 
 const WEEKDAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'] as const;
@@ -108,24 +110,29 @@ export function QuotaTimeline({
   // real quota window. Once there is timeline data, however, changing zoom must
   // never remove the whole panel just because that mode has no matching lanes.
   const hasAnyLane = useMemo(
-    () => laneInputs.some((input) => laneHasWindow(buildTimelineLane(input))),
+    () => laneInputs.some((input) => buildTimelineLanes(input).some(laneHasWindow)),
     [laneInputs]
   );
 
   const lanes = useMemo(
     () =>
       laneInputs
-        .map((input) =>
-          buildTimelineLane({
-            ...input,
-            // Weekly mode prefers the longest readable window. Session mode
-            // asks specifically for a real 5-hour window; longer periods must
-            // not be reinterpreted as 5-hour resets.
-            maxPeriodHours: mode === 'session' ? 5 : span.days * 24,
-          })
+        .flatMap((input) =>
+          buildTimelineLanes(
+            {
+              ...input,
+              // Select a window independently within each quota group.
+              // Session mode must not reinterpret longer periods as 5-hour resets.
+              maxPeriodHours: mode === 'session' ? 5 : span.days * 24,
+            },
+            (label) => {
+              const key = resolveAntigravityGroupLabelKey(label);
+              return key ? t(`antigravity_quota.${key}`, { defaultValue: label }) : label;
+            }
+          )
         )
         .filter((lane) => laneHasWindow(lane) && (mode !== 'session' || lane.periodHours === 5)),
-    [laneInputs, mode, span.days]
+    [laneInputs, mode, span.days, t]
   );
 
   /** Weekly: one cell per day. Session: one per 6 hours. */
@@ -158,13 +165,27 @@ export function QuotaTimeline({
 
   if (!hasAnyLane) return null;
 
+  const windowsTitle = t('quota_management.windows_title', { defaultValue: 'Quota windows' });
+  // How the bars are drawn: occasional knowledge, so it sits behind the title, not under the chart.
+  const chartNote =
+    mode === 'weekly'
+      ? t('quota_management.windows_note_weekly', {
+          defaultValue:
+            'Each bar is one full quota window, drawn from when it opened to when it resets. Lanes ending together compete for the same days.',
+        })
+      : t('quota_management.windows_note_session', {
+          defaultValue:
+            'Each bar is one 5-hour window. Only credentials with a window counting down can be projected; the rest stay empty rather than invented.',
+        });
+
   return (
     <section className={styles.timeline}>
       <header className={styles.head}>
         <div>
-          <h2 className={styles.title}>
-            {t('quota_management.windows_title', { defaultValue: 'Quota windows' })}
-          </h2>
+          <div className={styles.titleRow}>
+            <h2 className={styles.title}>{windowsTitle}</h2>
+            {lanes.length > 0 && <InfoTip content={chartNote} label={windowsTitle} />}
+          </div>
           <p className={styles.range}>
             {formatDay(span.startMs)} – {formatDay(span.endMs - 1)}
             {' · '}
@@ -299,17 +320,6 @@ export function QuotaTimeline({
               defaultValue: 'manual reset expiry',
             })}
           </span>
-          <span className={styles.legendNote}>
-            {mode === 'weekly'
-              ? t('quota_management.windows_note_weekly', {
-                  defaultValue:
-                    'Each bar is one full quota window, drawn from when it opened to when it resets. Lanes ending together compete for the same days.',
-                })
-              : t('quota_management.windows_note_session', {
-                  defaultValue:
-                    'Each bar is one 5-hour window. Only credentials with a window counting down can be projected; the rest stay empty rather than invented.',
-                })}
-          </span>
         </footer>
       )}
     </section>
@@ -357,11 +367,16 @@ function Lane({ lane, span, now, mode, cells, nowPercent, resolvedTheme }: LaneP
       <div className={styles.laneHead}>
         <div className={styles.laneTop}>
           <span className={styles.laneDot} />
-          <span className={styles.laneName} title={lane.displayName}>
-            {lane.displayName}
+          <span className={styles.laneName} title={lane.accountName ?? lane.displayName}>
+            {lane.accountName ?? lane.displayName}
           </span>
           {periodLabel && <span className={styles.lanePeriod}>{periodLabel}</span>}
         </div>
+        {lane.groupName && (
+          <span className={styles.laneGroupName} title={lane.groupName}>
+            {lane.groupName}
+          </span>
+        )}
         <div className={styles.laneLimits}>
           {lane.limits.map((limit) => (
             <span key={limit.label} className={styles.laneLimit}>
