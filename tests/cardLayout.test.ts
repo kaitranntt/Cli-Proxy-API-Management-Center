@@ -125,17 +125,26 @@ describe('stacked height measurements', () => {
 });
 
 describe('stored layout choice', () => {
-  const originalWindow = globalThis.window;
+  const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'window');
   afterEach(() => {
-    globalThis.window = originalWindow;
+    if (originalWindowDescriptor) {
+      Object.defineProperty(globalThis, 'window', originalWindowDescriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
   });
   const withStorage = (getItem: (key: string) => string | null, store?: Map<string, string>) => {
-    globalThis.window = {
-      localStorage: {
-        getItem,
-        setItem: (key: string, value: string) => store?.set(key, value),
+    // defineProperty avoids TypeError when Bun on Linux exposes a readonly global window.
+    Object.defineProperty(globalThis, 'window', {
+      value: {
+        localStorage: {
+          getItem,
+          setItem: (key: string, value: string) => store?.set(key, value),
+        },
       },
-    } as unknown as Window & typeof globalThis;
+      configurable: true,
+      writable: true,
+    });
   };
 
   test('reads a valid choice and falls back to Even rows otherwise', () => {
