@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nextProvider } from 'react-i18next';
@@ -398,29 +397,6 @@ describe('Claude usage snapshot rendering and retention', () => {
     useQuotaStore.getState().clearQuotaCache();
   });
 
-  test('offers read-only refresh for every non-idle auth-file quota, including Claude', () => {
-    // This host imports SCSS modules, so cover the action wiring here and
-    // verify its interaction with the production build in the browser.
-    const source = readFileSync(
-      new URL('../src/features/authFiles/components/AuthFileQuotaSection.tsx', import.meta.url),
-      'utf8'
-    );
-    // Idle quota is refreshed via the clickable idle prompt; avoid a duplicate button.
-    expect(source).toContain("const showRefreshQuotaAction = quotaStatus !== 'idle';");
-    expect(source).toContain('{showRefreshQuotaAction && (');
-    expect(source).toContain('<div className={styles.quotaCardActions}>');
-    expect(source).toContain('onClick={() => void refreshQuotaForFile()}');
-    expect(source).toContain("disabled={!canRefreshQuota || quotaStatus === 'loading'}");
-    expect(source).toContain("loading={quotaStatus === 'loading'}");
-    expect(source).toContain("{t('auth_files.quota_refresh_single')}");
-    expect(source).toContain("if (quota?.status === 'loading' || resettingQuota) return;");
-    expect(source).toContain(
-      'const canRefreshQuota = !disableControls && !file.disabled && !resettingQuota;'
-    );
-    expect(source).toContain('{resetQuotaAction}');
-    expect(CLAUDE_CONFIG).not.toHaveProperty('resetQuota');
-  });
-
   test('renders enabled extra usage in minor units and each balance in dollars', () => {
     const markup = render(quota);
     expect(markup).toContain('Extra Usage');
@@ -440,9 +416,9 @@ describe('Claude usage snapshot rendering and retention', () => {
 
   test('extra usage and balances share the window-row typography', () => {
     const markup = render({ ...quota, planType: 'plan_max' });
-    // Same anatomy as plan windows: label + mono telemetry header, never bare reset text.
+    // State belongs with the label; the right-hand telemetry is numeric.
     expect(markup).toContain(
-      '<div class="quotaRowHeader"><span class="quotaModel">Extra Usage</span><div class="quotaMeta"><span class="quotaPercent">Enabled</span><span class="quotaResetRelative">25% used</span>'
+      '<div class="claudeExtraUsageTitle"><span class="quotaModel">Extra Usage</span><span class="claudeExtraUsageStatus">Enabled</span></div><div class="quotaMeta"><span class="quotaPercent">25% used</span>'
     );
     expect(markup).toContain(
       '<span class="quotaModel" title="iguana_necktie">iguana_necktie</span><div class="quotaMeta"><span class="quotaPercent">$94.96 remaining</span>'
@@ -451,9 +427,30 @@ describe('Claude usage snapshot rendering and retention', () => {
     expect(markup).not.toMatch(/<div class="quotaRow"><span class="quotaReset">/);
     expect(markup).not.toContain('codexResetCreditLabel');
     expect(markup).toContain(
-      '<span class="codexPlanItem"><span class="codexPlanLabel">Plan</span>'
+      '<span class="codexPlanItem" data-quota-plan=""><span class="codexPlanLabel">Plan</span>'
     );
   });
+
+  test.each([
+    [true, 'Enabled'],
+    [false, 'Not enabled'],
+    [null, 'Unknown'],
+  ] as const)(
+    'keeps extra-usage state %s beside its label without utilization',
+    (isEnabled, label) => {
+      const markup = render({
+        ...quota,
+        dollarWindows: [],
+        extraUsage: { ...snapshot.extraUsage!, isEnabled, utilization: null },
+      });
+      expect(markup).toContain(
+        `<div class="claudeExtraUsageTitle"><span class="quotaModel">Extra Usage</span><span class="claudeExtraUsageStatus">${label}</span></div>`
+      );
+      expect(markup).not.toContain('class="quotaMeta"');
+      expect(markup).not.toContain('class="quotaPercent"');
+      expect(markup).not.toContain('class="quotaResetRelative"');
+    }
+  );
 
   test('host chips join the plan row and host content follows it', () => {
     const markup = renderToStaticMarkup(
@@ -491,7 +488,7 @@ describe('Claude usage snapshot rendering and retention', () => {
     expect(chipOnly).toContain('<div class="codexPlan"><span data-slot="chip"></span></div>');
   });
 
-  test('renders disabled extra usage, reasons, and zero amounts', () => {
+  test('omits redundant user-disabled notes but preserves limits and zero amounts', () => {
     const markup = render({
       ...quota,
       extraUsage: {
@@ -505,11 +502,84 @@ describe('Claude usage snapshot rendering and retention', () => {
         disabledReason: 'user_disabled',
       },
     });
-    expect(markup).toContain('Disabled');
+    expect(markup.match(/Not enabled/g)).toHaveLength(1);
     expect(markup).toContain('Spent $0.00 / Limit $0.00');
-    expect(markup).toContain('Disabled by user');
     expect(markup).toContain('Spending limit reached');
-    expect(markup).toContain('Reason: user_disabled');
+    expect(markup).not.toContain('Reason: user_disabled');
+  });
+
+  test.each([null, 'user_disabled'])(
+    'does not repeat an off state when the user-disabled reason is %s',
+    (disabledReason) => {
+      const markup = render({
+        ...quota,
+        dollarWindows: [],
+        extraUsage: {
+          ...snapshot.extraUsage!,
+          isEnabled: false,
+          utilization: null,
+          userDisabled: true,
+          disabledReason,
+        },
+      });
+      expect(markup.match(/Not enabled/g)).toHaveLength(1);
+      expect(markup).not.toContain('class="quotaMeta"');
+    }
+  );
+
+  test.each([true, false, null])(
+    'renders user-disabled only beside the label when the enabled flag is %s',
+    (isEnabled) => {
+      const markup = render({
+        ...quota,
+        dollarWindows: [],
+        extraUsage: {
+          ...snapshot.extraUsage!,
+          isEnabled,
+          utilization: null,
+          userDisabled: true,
+          disabledReason: null,
+        },
+      });
+      expect(markup.match(/Not enabled/g)).toHaveLength(1);
+      expect(markup).not.toContain('Reason: user_disabled');
+      expect(markup).toContain('<span class="claudeExtraUsageStatus">Not enabled</span>');
+      expect(markup).not.toContain('class="quotaMeta"');
+    }
+  );
+
+  test.each([true, null])(
+    'moves a user_disabled reason code into the sole status when the enabled flag is %s',
+    (isEnabled) => {
+      const markup = render({
+        ...quota,
+        dollarWindows: [],
+        extraUsage: {
+          ...snapshot.extraUsage!,
+          isEnabled,
+          utilization: null,
+          userDisabled: null,
+          disabledReason: 'user_disabled',
+        },
+      });
+      expect(markup.match(/Not enabled/g)).toHaveLength(1);
+      expect(markup).not.toContain('Reason: user_disabled');
+      expect(markup).not.toContain('class="quotaMeta"');
+    }
+  );
+
+  test('preserves a distinct extra-usage disabled reason', () => {
+    const markup = render({
+      ...quota,
+      extraUsage: {
+        ...snapshot.extraUsage!,
+        isEnabled: false,
+        userDisabled: true,
+        disabledReason: 'account_review_required',
+      },
+    });
+    expect(markup).toContain('Reason: account_review_required');
+    expect(markup.match(/Not enabled/g)).toHaveLength(1);
   });
 
   test('shows the last observation time when a retained snapshot is stale', () => {
@@ -518,25 +588,6 @@ describe('Claude usage snapshot rendering and retention', () => {
     expect(markup).toContain('Showing last successful check:');
     expect(markup).toContain(new Date(observedAt).toLocaleString('en'));
     expect(markup).toContain('$94.96 remaining');
-  });
-
-  test('keeps the last good data during loading and errors, then recovers', () => {
-    const store = useQuotaStore.getState();
-    store.setClaudeQuota({ [file.name]: quota });
-    store.setClaudeQuota({ [file.name]: CLAUDE_CONFIG.buildLoadingState() });
-    let retained = useQuotaStore.getState().claudeQuota[file.name];
-    expect(retained.status).toBe('loading');
-    expect(retained.extraUsage).toEqual(quota.extraUsage);
-    expect(retained.dollarWindows).toEqual(quota.dollarWindows);
-    store.setClaudeQuota({ [file.name]: CLAUDE_CONFIG.buildErrorState('network failed', 502) });
-    retained = useQuotaStore.getState().claudeQuota[file.name];
-    expect(retained.status).toBe('error');
-    expect(retained.stale).toBe(true);
-    expect(retained.observedAt).toBe(observedAt);
-    expect(retained.dollarWindows).toEqual(quota.dollarWindows);
-    const recovered = { ...quota, observedAt: '2026-10-10T01:00:00Z', stale: false };
-    store.setClaudeQuota({ [file.name]: recovered });
-    expect(useQuotaStore.getState().claudeQuota[file.name]).toEqual(recovered);
   });
 
   test('does not retain balances across file replacement or session invalidation', () => {

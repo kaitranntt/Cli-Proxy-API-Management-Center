@@ -2,11 +2,17 @@
  * AI 提供商 Workbench 视图模型(归一化各 brand 的异构 config)
  */
 
-import type { GeminiKeyConfig, OpenAIProviderConfig, ProviderKeyConfig } from '@/types';
+import type {
+  GeminiKeyConfig,
+  OpenAIProviderConfig,
+  ProviderKeyConfig,
+  ProviderSource,
+} from '@/types';
+import type { MemberModes } from '@/services/api/nativeProviderGroups';
 import type { ThinkingLevel } from './thinkingLevels';
 import type { RuntimePolicyDraft } from './runtimePolicy';
 import type { ModelOptionsInput } from './modelOptions';
-import type { ProviderBehaviorOptions } from '@/types/provider';
+import type { NativeKeyOptions, ProviderBehaviorOptions } from '@/types/provider';
 
 export type ProviderBrand =
   | 'gemini'
@@ -120,7 +126,18 @@ export interface ProviderResource {
   raw: unknown;
 }
 
+export interface NativeSection {
+  source: ProviderSource;
+  name: string;
+  baseUrl?: string;
+  prefix?: string;
+  keyCount: number;
+  members: ProviderResource[];
+}
+
 export interface ProviderGroup {
+  ambiguousProtocols?: SponsorProtocol[];
+  nativeSections?: NativeSection[];
   id: ProviderBrand;
   resources: ProviderResource[];
 }
@@ -176,6 +193,7 @@ export interface ApiKeyEntryInput {
   sourceIndex?: number;
   apiKey: string;
   existingApiKey?: string;
+  savedProxyUrl?: string;
   proxyUrl: string;
   weight?: number;
   authIndex?: string;
@@ -185,10 +203,13 @@ export interface CloakInput {
   mode: string;
   strictMode: boolean;
   sensitiveWordsText: string;
+  sensitiveWordsReplace: Record<string, string>;
+  sensitivePatternsReplace: { pattern: string; replacement: string }[];
   cacheUserId: boolean;
 }
 
-export interface ProviderEntryFormInput extends ProviderBehaviorOptions {
+export interface ProviderEntryFormInput extends ProviderBehaviorOptions, NativeKeyOptions {
+  memberModes?: MemberModes;
   /** OpenAI 创建时只在 apiKeyEntries 中传 */
   apiKey: string;
   /** OpenAI 必填,其余 brand 不展示 */

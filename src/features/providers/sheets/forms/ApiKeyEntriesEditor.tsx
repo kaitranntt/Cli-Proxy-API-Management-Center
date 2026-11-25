@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   IconChevronDown,
@@ -10,6 +10,7 @@ import {
 } from '@/components/ui/icons';
 import { maskApiKey } from '@/utils/format';
 import { MAX_CREDENTIAL_WEIGHT } from '@/utils/credentialWeight';
+import { FieldLabel } from '@/components/ui/FieldLabel';
 import type { ApiKeyEntryInput } from '../../types';
 import type { ConnectivityState, ConnectivityStatus } from './useConnectivityTest';
 import { ConnectivityStatusIcon } from './ConnectivityStatusIcon';
@@ -49,6 +50,7 @@ export function ApiKeyEntriesEditor({
   onTestAll,
 }: ApiKeyEntriesEditorProps) {
   const { t } = useTranslation();
+  const fid = useId();
   const [expandedIdx, setExpandedIdx] = useState<number | null>(() =>
     entries.length === 1 && isBlankEntry(entries[0]) ? 0 : null
   );
@@ -58,11 +60,8 @@ export function ApiKeyEntriesEditor({
   const togglePasswordVisibility = (idx: number) => {
     setShowPasswords((prev) => {
       const next = new Set(prev);
-      if (next.has(idx)) {
-        next.delete(idx);
-      } else {
-        next.add(idx);
-      }
+      if (next.has(idx)) next.delete(idx);
+      else next.add(idx);
       return next;
     });
   };
@@ -77,11 +76,8 @@ export function ApiKeyEntriesEditor({
       if (!prev.size) return prev;
       const next = new Set<number>();
       prev.forEach((idx) => {
-        if (idx < removeIdx) {
-          next.add(idx);
-        } else if (idx > removeIdx) {
-          next.add(idx - 1);
-        }
+        if (idx < removeIdx) next.add(idx);
+        else if (idx > removeIdx) next.add(idx - 1);
       });
       return next;
     });
@@ -99,19 +95,24 @@ export function ApiKeyEntriesEditor({
   return (
     <div className={styles.entriesList}>
       <div className={`${styles.entriesToolbar} ${styles.entriesToolbarSplit}`}>
-        <button type="button" className={styles.addBtn} disabled={mutating} onClick={handleAdd}>
-          <IconPlus size={12} />
+        <button
+          type="button"
+          className={styles.connectivityBtn}
+          disabled={mutating}
+          onClick={handleAdd}
+        >
+          <IconPlus size={13} />
           <span>{t('providersPage.form.addApiKeyEntry')}</span>
         </button>
         <button
           type="button"
-          className={styles.connectivityBtn}
+          className={styles.connectivityBtnGhost}
           disabled={mutating || isTestingAny}
           onClick={onTestAll}
         >
           {isTestingAny ? (
             <span className={`${styles.statusIcon} ${styles.statusIconLoading}`}>
-              <IconLoader2 size={14} />
+              <IconLoader2 size={13} />
             </span>
           ) : null}
           <span>{t('providersPage.connectivity.testAll')}</span>
@@ -121,6 +122,8 @@ export function ApiKeyEntriesEditor({
         const status = statuses[idx] ?? idleStatus;
         const expanded = expandedIdx === idx;
         const summaryKey = entry.apiKey.trim() || entry.existingApiKey?.trim() || '';
+        const toggleLabel = expanded ? t('common.collapse') : t('common.expand');
+        const passwordShown = showPasswords.has(idx);
         return (
           <div key={idx} className={styles.entryCard}>
             <div className={styles.entryCardHeader}>
@@ -150,28 +153,21 @@ export function ApiKeyEntriesEditor({
                   disabled={mutating || status.state === 'loading'}
                   onClick={() => onTest(idx)}
                 >
-                  {status.state === 'loading' ? (
-                    <span className={`${styles.statusIcon} ${styles.statusIconLoading}`}>
-                      <IconLoader2 size={14} />
-                    </span>
-                  ) : null}
-                  <span>{t('providersPage.connectivity.test')}</span>
+                  {t('providersPage.connectivity.test')}
                 </button>
                 <button
                   type="button"
                   className={styles.entryCardIconBtn}
                   onClick={() => setExpandedIdx(expanded ? null : idx)}
-                  title={expanded ? t('common.collapse') : t('common.expand')}
-                  aria-label={expanded ? t('common.collapse') : t('common.expand')}
+                  title={toggleLabel}
+                  aria-label={toggleLabel}
+                  aria-expanded={expanded}
                 >
                   <IconChevronDown
-                    className={[
-                      styles.entryCardChevron,
-                      expanded ? styles.entryCardChevronOpen : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    size={14}
+                    className={`${styles.entryCardChevron} ${
+                      expanded ? styles.entryCardChevronOpen : ''
+                    }`}
+                    size={15}
                   />
                 </button>
                 <button
@@ -179,8 +175,10 @@ export function ApiKeyEntriesEditor({
                   className={styles.removeBtn}
                   disabled={mutating || removeDisabled}
                   onClick={() => handleRemove(idx)}
+                  aria-label={t('providersPage.actions.delete')}
+                  title={t('providersPage.actions.delete')}
                 >
-                  <IconX size={12} />
+                  <IconX size={14} />
                 </button>
               </div>
             </div>
@@ -190,11 +188,14 @@ export function ApiKeyEntriesEditor({
             {expanded ? (
               <div className={styles.entryCardBody}>
                 <div className={styles.field}>
-                  <label className={styles.label}>{t('providersPage.form.apiKey')}</label>
+                  <label className={styles.label} htmlFor={`${fid}-${idx}-key`}>
+                    {t('providersPage.form.apiKey')}
+                  </label>
                   <div className={styles.passwordField}>
                     <input
-                      className={styles.passwordInput}
-                      type={showPasswords.has(idx) ? 'text' : 'password'}
+                      id={`${fid}-${idx}-key`}
+                      className={`${styles.input} ${styles.passwordInput}`}
+                      type={passwordShown ? 'text' : 'password'}
                       value={entry.apiKey}
                       onChange={(e) => onUpdate(idx, { apiKey: e.target.value })}
                       autoComplete="new-password"
@@ -214,47 +215,60 @@ export function ApiKeyEntriesEditor({
                       onClick={() => togglePasswordVisibility(idx)}
                       disabled={mutating}
                       aria-label={
-                        showPasswords.has(idx)
+                        passwordShown
                           ? t('providersPage.form.hideApiKey')
                           : t('providersPage.form.showApiKey')
                       }
                       title={
-                        showPasswords.has(idx)
+                        passwordShown
                           ? t('providersPage.form.hideApiKey')
                           : t('providersPage.form.showApiKey')
                       }
                     >
-                      {showPasswords.has(idx) ? <IconEyeOff size={16} /> : <IconEye size={16} />}
+                      {passwordShown ? <IconEyeOff size={15} /> : <IconEye size={15} />}
                     </button>
                   </div>
                 </div>
-                <div className={styles.field}>
-                  <label className={styles.label}>{t('providersPage.form.proxyUrl')}</label>
-                  <input
-                    className={styles.input}
-                    value={entry.proxyUrl}
-                    onChange={(e) => onUpdate(idx, { proxyUrl: e.target.value })}
-                    disabled={mutating}
-                    placeholder="http://127.0.0.1:7890"
-                  />
-                </div>
-                <div className={styles.field}>
-                  <label className={styles.label}>{t('providersPage.form.weight')}</label>
-                  <input
-                    className={styles.input}
-                    type="number"
-                    step="1"
-                    max={MAX_CREDENTIAL_WEIGHT}
-                    value={entry.weight ?? ''}
-                    onChange={(e) =>
-                      onUpdate(idx, {
-                        weight: e.target.value === '' ? undefined : Number(e.target.value),
-                      })
-                    }
-                    disabled={mutating}
-                    placeholder="1"
-                  />
-                  <span className={styles.labelHint}>{t('providersPage.form.weightHint')}</span>
+                <div className={styles.fieldRow}>
+                  <div className={styles.field}>
+                    <label className={styles.label} htmlFor={`${fid}-${idx}-proxy`}>
+                      {t('providersPage.form.proxyUrl')}
+                    </label>
+                    <input
+                      id={`${fid}-${idx}-proxy`}
+                      className={styles.input}
+                      value={entry.proxyUrl}
+                      onChange={(e) => onUpdate(idx, { proxyUrl: e.target.value })}
+                      disabled={mutating}
+                      placeholder="http://127.0.0.1:7890"
+                    />
+                  </div>
+                  <div className={styles.field}>
+                    <FieldLabel
+                      className={styles.labelLine}
+                      labelClassName={styles.label}
+                      htmlFor={`${fid}-${idx}-weight`}
+                      label={t('providersPage.form.weight')}
+                      hint={t('providersPage.form.weightHint')}
+                      hintId={`${fid}-${idx}-weight-hint`}
+                    />
+                    <input
+                      id={`${fid}-${idx}-weight`}
+                      aria-describedby={`${fid}-${idx}-weight-hint`}
+                      className={styles.input}
+                      type="number"
+                      step="1"
+                      max={MAX_CREDENTIAL_WEIGHT}
+                      value={entry.weight ?? ''}
+                      onChange={(e) =>
+                        onUpdate(idx, {
+                          weight: e.target.value === '' ? undefined : Number(e.target.value),
+                        })
+                      }
+                      disabled={mutating}
+                      placeholder="1"
+                    />
+                  </div>
                 </div>
               </div>
             ) : null}

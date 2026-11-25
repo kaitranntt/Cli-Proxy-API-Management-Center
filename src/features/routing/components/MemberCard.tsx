@@ -1,3 +1,4 @@
+import { ProviderArtwork } from '@/components/common/ProviderArtwork';
 import { useEffect, useId, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconEllipsis, IconGripVertical, IconLock } from '@/components/ui/icons';
@@ -132,7 +133,7 @@ export function MemberCard({
 
   // Disabled is configuration, reliable for every member. Cooldown and availability are runtime
   // state CPA exposes only for credentials, so an enabled config API key says it has none. That
-  // note lives in the tooltip (and the footnote): repeating it on every card is only noise.
+  // note lives in the card's title (and the entry InfoTip): repeating it on every card is only noise.
   const showNoRuntimeState = member.kind !== 'credential' && !member.disabled;
 
   let chip: string | null = null;
@@ -202,7 +203,12 @@ export function MemberCard({
       )}
 
       <span className={styles.icon} aria-hidden="true">
-        {icon ? <img src={icon} alt="" /> : <span>{member.name.charAt(0).toUpperCase()}</span>}
+        <ProviderArtwork
+          provider={member.kind === 'credential' ? member.family : undefined}
+          src={icon}
+        >
+          <span>{member.name.charAt(0).toUpperCase()}</span>
+        </ProviderArtwork>
       </span>
 
       <span className={styles.body}>
